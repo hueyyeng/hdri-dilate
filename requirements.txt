@@ -1,0 +1,6 @@
+OpenEXR
+opencv-python
+numpy
+matplotlib
+Comel
+pyinstaller
