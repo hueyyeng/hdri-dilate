@@ -73,6 +73,7 @@ class DilateWorker(Worker):
         self.checkpoint_iteration = 0
         self.iteration_cap = 100
 
+    # FIXME: Suspecting recursive dilate is not releasing memory
     def _dilate(
         self,
         cc_labels,

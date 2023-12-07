@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+from pathlib import Path
 
 import cv2
 import numpy
@@ -148,18 +149,21 @@ class DilateProgressDialog(QDialog):
             self.output_hdri_original,
             self.output_hdri_dilated,
         ]
-        header = get_exr_header(
-            self.parent_.image_path_lineedit.get_path()
-        )
+        image_path = Path(self.parent_.image_path_lineedit.get_path())
+        if image_path.suffix.casefold().endswith("exr"):
+            exr_header = get_exr_header(
+                self.parent_.image_path_lineedit.get_path()
+            )
+
         # write_exr(
         #     self.output_mask_thresh,
         #     "output_mask_threshold.exr",
-        #     header,
+        #     exr_header,
         # )
         # write_exr(
         #     self.output_mask_dilated,
         #     "output_mask_dilated.exr",
-        #     header,
+        #     exr_header,
         # )
         # cv2.imwrite('image/output_mask_thresh.hdr', self.output_mask_thresh,)
         # cv2.imwrite('image/output_mask_dilated.hdr', self.output_mask_dilated,)
@@ -167,12 +171,12 @@ class DilateProgressDialog(QDialog):
         # write_exr(
         #     self.output_hdri_original,
         #     "output_hdri_original.exr",
-        #     header,
+        #     exr_header,
         # )
         # write_exr(
         #     self.output_hdri_dilated,
         #     "output_hdri_dilated.exr",
-        #     header,
+        #     exr_header,
         # )
         show_four_way(images)
 
