@@ -11,6 +11,7 @@ from PySide6.QtGui import *
 from PySide6.QtWidgets import *
 
 from hdri_dilate import settings
+from hdri_dilate.enums import MorphShape
 from hdri_dilate.exr import write_exr, get_exr_header
 from hdri_dilate.hdri_dilate_qt import qWait, tr
 from hdri_dilate.hdri_dilate_qt.checkbox import CheckBox
@@ -60,10 +61,40 @@ def show_four_way(images: list[numpy.ndarray]):
     plt.show()
 
 
+def save_four_way(fig_title: str, filename: str, images: list[numpy.ndarray]):
+    print(f"{fig_title=}, {filename=}")
+    titles = [
+        "dilated_cc_mask",
+        "temp_dilated_cc_mask",
+        "threshold_mask",
+        "intersection",
+    ]
+    fig, axes = plt.subplots(
+        nrows=2,
+        ncols=2,
+        figsize=(10, 10),
+        tight_layout=False,
+    )
+    axes = axes.flatten()
+    for ax, image, title in zip(axes, images, titles):
+        ax.imshow(image)
+        ax.set(title=title)
+        ax.axis("off")
+
+    plt.suptitle(fig_title)
+    plt.savefig(filename)
+    plt.close()
+
+
 class DilateProgressDialog(QDialog):
     def __init__(self, parent: "MainWindow"):
         super().__init__(parent)
         self.parent_ = parent
+        # self.output_mask_thresh = None
+        # self.output_mask_dilated = None
+        # self.output_hdri_original = None
+        # self.output_hdri_dilated = None
+
         self.setWindowTitle(tr("Generating HDRI Dilate"))
         self.setup_ui()
         self.run_worker()
@@ -101,6 +132,8 @@ class DilateProgressDialog(QDialog):
         worker.signals.output_mask_dilated.connect(self._set_output_mask_dilated)
         worker.signals.output_hdri_original.connect(self._set_output_hdri_original)
         worker.signals.output_hdri_dilated.connect(self._set_output_hdri_dilated)
+
+        worker.signals.foo.connect(save_four_way)
 
         run_worker_in_thread(
             worker,
@@ -150,6 +183,11 @@ class MainWindow(ComelMainWindowWrapper):
         self.threadpool = QThreadPool().globalInstance()
         self.setup_ui()
 
+    def closeEvent(self, event):
+        plt.close("all")
+        cv2.destroyAllWindows()
+        super().closeEvent(event)
+
     def setup_ui(self):
         # Required for DockWidget to dock into DockWidget
         self.setDockNestingEnabled(True)
@@ -172,7 +210,9 @@ class MainWindow(ComelMainWindowWrapper):
 
         self.image_path_lineedit = FilePathSelectorWidget(self)
         self.image_path_lineedit.set_path(
-            r"D:\Projects\Work\hdri-tools\image\small_empty_room_3_1k.exr"
+            # r"D:\Projects\Work\hdri-tools\image\rural_asphalt_road_1k.exr"
+            # r"D:\Projects\Work\hdri-tools\image\small_empty_room_2_1k.exr"
+            r"D:\Projects\Work\hdri-tools\image\christmas_photo_studio_02_1k.exr"
         )
         self.use_bgr_order_checkbox = CheckBox(self)
         self.use_bgr_order_checkbox.setChecked(False)
@@ -187,7 +227,7 @@ class MainWindow(ComelMainWindowWrapper):
         self.blur_size_spinbox.setSingleStep(2)
 
         self.dilate_iteration_spinbox = QSpinBox(self)
-        self.dilate_iteration_spinbox.setValue(1)
+        self.dilate_iteration_spinbox.setValue(3)
         self.dilate_iteration_spinbox.setMaximum(50)
 
         self.intensity_spinbox = QDoubleSpinBox(self)
@@ -201,11 +241,12 @@ class MainWindow(ComelMainWindowWrapper):
         self.dilate_shape_combobox = QComboBox(self)
         self.dilate_shape_combobox.addItems(
             [
-                "Rectangle",
-                "Cross",
-                "Ellipsis",
+                MorphShape.RECTANGLE,
+                MorphShape.CROSS,
+                MorphShape.ELLIPSIS,
             ]
         )
+        self.dilate_shape_combobox.setCurrentText(MorphShape.ELLIPSIS)
 
         form.addRow(tr("EXR/HDR Path"), self.image_path_lineedit)
         form.addRow(tr("Intensity"), self.intensity_spinbox)

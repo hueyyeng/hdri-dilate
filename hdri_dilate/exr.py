@@ -23,6 +23,7 @@ def load_exr(exr_path: str, use_bgr_order=False):
     dw = exr.header()["dataWindow"]
     image_size = (dw.max.x - dw.min.x + 1, dw.max.y - dw.min.y + 1)
 
+    dtype = ExrDataType.FLOAT_32
     pixel_type = Imath.PixelType(Imath.PixelType.FLOAT)
 
     img_R, img_G, img_B = exr.channels("RGB", pixel_type)
@@ -31,9 +32,9 @@ def load_exr(exr_path: str, use_bgr_order=False):
     arr_G = array.array("f", img_G)
     arr_B = array.array("f", img_B)
 
-    ndarr_R = np.array(arr_R, dtype=ExrDataType.FLOAT_32)
-    ndarr_G = np.array(arr_G, dtype=ExrDataType.FLOAT_32)
-    ndarr_B = np.array(arr_B, dtype=ExrDataType.FLOAT_32)
+    ndarr_R = np.array(arr_R, dtype=dtype)
+    ndarr_G = np.array(arr_G, dtype=dtype)
+    ndarr_B = np.array(arr_B, dtype=dtype)
 
     # OpenCV process as BGR order internally by default
     arrays = [ndarr_R, ndarr_G, ndarr_B]

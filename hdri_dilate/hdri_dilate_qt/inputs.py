@@ -1,5 +1,6 @@
 import os
 import re
+from pathlib import Path
 
 from PySide6.QtCore import *
 from PySide6.QtGui import *
@@ -72,6 +73,12 @@ class BasePathSelectorWidget(QWidget):
     def select_file(self):
         file_dialog = QFileDialog()
         file_dialog.setFileMode(self.FILE_MODE)
+        _ = Path(self.get_path())
+        if _.exists():
+            if _.is_dir():
+                file_dialog.setDirectory(str(_))
+            else:
+                file_dialog.setDirectory(str(_.parent))
 
         if not file_dialog.exec():
             return
