@@ -101,3 +101,7 @@ class BasePathSelectorWidget(QWidget):
 
 class FilePathSelectorWidget(BasePathSelectorWidget):
     pass
+
+
+class FolderPathSelectorWidget(BasePathSelectorWidget):
+    FILE_MODE = QFileDialog.FileMode.Directory

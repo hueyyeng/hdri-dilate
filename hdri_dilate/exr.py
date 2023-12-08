@@ -1,4 +1,5 @@
 import array
+from pathlib import Path
 
 import Imath
 import numpy as np
@@ -47,7 +48,7 @@ def load_exr(exr_path: str, use_bgr_order=False):
     return results
 
 
-def write_exr(hdr_image: np.ndarray, exr_path: str, exr_header: dict, use_bgr_order=False):
+def write_exr(hdr_image: np.ndarray, exr_path: str | Path, exr_header: dict, use_bgr_order=False):
     channel_layout = {
         "R": 0,
         "G": 1,
@@ -60,7 +61,7 @@ def write_exr(hdr_image: np.ndarray, exr_path: str, exr_header: dict, use_bgr_or
             "B": 0,
         }
 
-    exr_output = OpenEXR.OutputFile(exr_path, exr_header)
+    exr_output = OpenEXR.OutputFile(str(exr_path), exr_header)
     exr_output.writePixels(
         dict(
             [

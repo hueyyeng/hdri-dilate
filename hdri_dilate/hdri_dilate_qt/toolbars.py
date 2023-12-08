@@ -69,8 +69,8 @@ class HorizontalToolBar(QWidget):
 
 
 class VerticalToolBar(QWidget):
-    width_margin = 6
-    height_margin = 0
+    width_margin = 12
+    height_margin = 12
 
     def __init__(self, parent=None):
         super().__init__(parent)
