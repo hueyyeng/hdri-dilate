@@ -234,16 +234,17 @@ class DilateProgressDialog(QDialog):
                 exr_header = get_exr_header(
                     self.parent_.image_path_lineedit.get_path()
                 )
+                mask_thresh_exr_header = exr_header.copy()
 
                 mask_thresh = output_path / f"{image_path.stem}_mask_threshold.exr"
                 mask_dilated = output_path / f"{image_path.stem}_mask_dilated.exr"
                 hdri_dilated = output_path / f"{image_path.stem}_dilated.exr"
 
-                # write_exr(
-                #     self.output_mask_thresh,
-                #     mask_thresh,
-                #     exr_header,
-                # )
+                write_exr(
+                    self.output_mask_thresh,
+                    mask_thresh,
+                    mask_thresh_exr_header,
+                )
                 write_exr(
                     self.output_mask_dilated,
                     mask_dilated,
@@ -283,8 +284,8 @@ class MainWindow(ComelMainWindowWrapper):
         self.setDockNestingEnabled(True)
 
         # Toolbar
-        self.toolbar = MainWindowToolBar(self)
-        self.addToolBar(self.toolbar)
+        # self.toolbar = MainWindowToolBar(self)
+        # self.addToolBar(self.toolbar)
         self.setup_toolbar()
 
         # Menu bar
@@ -377,7 +378,7 @@ class MainWindow(ComelMainWindowWrapper):
         self.generate_btn = QPushButton(tr("Generate"))
         self.generate_btn.clicked.connect(self.generate)
 
-        advanced_settings = CollapsibleWidget("Advanced Settings")
+        advanced_settings = CollapsibleWidget("Advanced Settings", self)
         advanced_settings.addWidget(self.advanced_form)
         advanced_settings.collapse()
 

@@ -48,29 +48,56 @@ def load_exr(exr_path: str, use_bgr_order=False):
     return results
 
 
+# TODO: Make this general purpose in the future
 def write_exr(hdr_image: np.ndarray, exr_path: str | Path, exr_header: dict, use_bgr_order=False):
-    channel_layout = {
-        "R": 0,
-        "G": 1,
-        "B": 2,
-    }
-    if use_bgr_order:
-        channel_layout = {
-            "R": 2,
-            "G": 1,
-            "B": 0,
+    # The Alpha/Mask stuff
+    if len(hdr_image.shape) == 2:
+        data = hdr_image[:, :].astype(np.float32).tobytes()
+        pixels = [
+            ("R", data),
+            ("G", data),
+            ("B", data),
+        ]
+        exr_header["channels"] = {
+            "R": Imath.Channel(Imath.PixelType(Imath.PixelType.FLOAT), 1, 1),
+            "G": Imath.Channel(Imath.PixelType(Imath.PixelType.FLOAT), 1, 1),
+            "B": Imath.Channel(Imath.PixelType(Imath.PixelType.FLOAT), 1, 1),
         }
 
+    # FIXME: Dilated mask workaround for now...
+    elif hdr_image.dtype == np.uint8 and len(hdr_image.shape) == 3:
+        channels = {
+            "R": 0,
+            "G": 1,
+            "B": 2,
+        }
+        pixels = [
+            (
+                channel,
+                hdr_image[:, :, channels[channel]].astype(np.float32).tobytes()
+            ) for channel in channels.keys()
+        ]
+
+    # The usual RGB stuff
+    else:
+        channels = {
+            "R": 0,
+            "G": 1,
+            "B": 2,
+        }
+        if use_bgr_order:
+            channels = {
+                "R": 2,
+                "G": 1,
+                "B": 0,
+            }
+        pixels = [
+            (
+                channel,
+                hdr_image[:, :, channels[channel]].astype(hdr_image.dtype).tobytes()
+            ) for channel in channels.keys()
+        ]
+
     exr_output = OpenEXR.OutputFile(str(exr_path), exr_header)
-    exr_output.writePixels(
-        dict(
-            [
-                (
-                    channel,
-                    hdr_image[:, :, channel_layout[channel]]
-                    .astype(np.float32).tobytes()
-                ) for channel in channel_layout.keys()
-            ]
-        )
-    )
+    exr_output.writePixels(dict(pixels))
     exr_output.close()

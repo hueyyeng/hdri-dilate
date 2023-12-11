@@ -7,7 +7,7 @@ from PySide6.QtGui import *
 from PySide6.QtWidgets import *
 
 from hdri_dilate.constants import icons
-from hdri_dilate.hdri_dilate_qt import tr
+from hdri_dilate.hdri_dilate_qt import qWait, tr
 
 logger = logging.getLogger()
 
@@ -171,6 +171,7 @@ class CollapsibleWidgetContent(QWidget):
 class CollapsibleWidget(QWidget):
     def __init__(self, name="Widget", parent=None):
         super().__init__(parent)
+        self.parent_ = parent
         self.setObjectName(f"cw_{name}")
         self.content = CollapsibleWidgetContent(self)
         self.header = CollapsibleWidgetHeader(name, self)
@@ -199,3 +200,9 @@ class CollapsibleWidget(QWidget):
 
     def toggle(self):
         self.expand() if not self.content.isVisible() else self.collapse()
+        if isinstance(self.parent_, QMainWindow):
+            qWait(20)
+            self.parent_.resize(
+                self.parent_.width(),
+                self.parent_.minimumSizeHint().height(),
+            )
