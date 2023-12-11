@@ -83,6 +83,9 @@ class DilateWorker(Worker):
         )
 
     def _export_four_way(self, dilated_cc_mask):
+        if not self.active:
+            return
+
         images = (
             dilated_cc_mask,
             self.temp_dilated_cc_mask,

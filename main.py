@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Sequence
 
 import cv2
+import matplotlib
 import numpy as np
 from comel.wrapper import ComelMainWindowWrapper
 from matplotlib import pyplot as plt
@@ -18,22 +19,26 @@ from hdri_dilate.enums import MorphShape
 from hdri_dilate.exr import get_exr_header, write_exr
 from hdri_dilate.hdri_dilate_qt import qWait, tr
 from hdri_dilate.hdri_dilate_qt.checkbox import CheckBox
-from hdri_dilate.hdri_dilate_qt.collapsible import CollapsibleWidget
+from hdri_dilate.hdri_dilate_qt.collapsible import (
+    CollapsibleWidget,
+)
 from hdri_dilate.hdri_dilate_qt.forms import (
     FormNoSideMargins,
 )
 from hdri_dilate.hdri_dilate_qt.inputs import (
-    FilePathSelectorWidget, FolderPathSelectorWidget,
+    FilePathSelectorWidget,
+    FolderPathSelectorWidget,
 )
 from hdri_dilate.hdri_dilate_qt.menu import (
     MainWindowMenuBar,
 )
 from hdri_dilate.hdri_dilate_qt.message_box import (
     LaunchErrorMessageBox,
+    NewMessageBox,
 )
-from hdri_dilate.hdri_dilate_qt.sidebar import SidebarWidget
 from hdri_dilate.hdri_dilate_qt.toolbars import (
-    MainWindowToolBar, VerticalToolBar,
+    MainWindowToolBar,
+    VerticalToolBar,
 )
 from hdri_dilate.hdri_dilate_qt.workers import (
     run_worker_in_thread,
@@ -299,12 +304,6 @@ class MainWindow(ComelMainWindowWrapper):
         self.advanced_form = FormNoSideMargins(self)
 
         self.image_path_lineedit = FilePathSelectorWidget(self)
-        self.image_path_lineedit.set_path(
-            # r"D:\Projects\Work\hdri-tools\image\rural_asphalt_road_1k.exr"
-            # r"D:\Projects\Work\hdri-tools\image\small_empty_room_2_1k.exr"
-            r"D:\Projects\Work\hdri-tools\image\christmas_photo_studio_02_1k.exr"
-        )
-
         self.output_folder_lineedit = FolderPathSelectorWidget(self)
         self.save_output_checkbox = CheckBox(self)
         self.save_output_checkbox.setChecked(True)
@@ -396,6 +395,64 @@ class MainWindow(ComelMainWindowWrapper):
         ...
 
     def generate(self):
+        hdri_input = self.image_path_lineedit.get_path()
+        if not hdri_input:
+            msg = tr(
+                "EXR/HDR Path is blank! Please specify the path."
+            )
+            NewMessageBox(self).warning(
+                title=tr("Blank EXR/HDR Path"),
+                text=msg
+            )
+            return
+
+        is_valid_hdri_path = self.image_path_lineedit.validate_path()
+        if not is_valid_hdri_path:
+            msg = tr(
+                "Invalid EXR/HDR path! EXR/HDR path must not "
+                "contains illegal characters."
+            )
+            NewMessageBox(self).warning(
+                title=tr("Warning"),
+                text=msg
+            )
+            return
+
+        if not Path(hdri_input).exists():
+            msg = tr(
+                "EXR/HDR path does not exists! Verify the path is accessible or "
+                "reselect the file."
+            )
+            NewMessageBox(self).warning(
+                title=tr("Warning"),
+                text=msg
+            )
+            return
+
+        is_save_output = self.save_output_checkbox.isChecked()
+        output_folder = self.output_folder_lineedit.get_path()
+        if is_save_output and not output_folder:
+            msg = tr(
+                "Output folder path is blank! Please specify the output folder path."
+            )
+            NewMessageBox(self).warning(
+                title=tr("Blank Output Folder Path"),
+                text=msg
+            )
+            return
+
+        is_valid_output_folder = self.output_folder_lineedit.validate_path()
+        if is_save_output and not is_valid_output_folder:
+            msg = tr(
+                "Invalid output folder path! Output folder path must not "
+                "contains illegal characters."
+            )
+            NewMessageBox(self).warning(
+                title=tr("Warning"),
+                text=msg
+            )
+            return
+
         dialog = DilateProgressDialog(self)
         dialog.show()
 
@@ -404,12 +461,12 @@ class Application(QApplication):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.setApplicationName(settings.APP_NAME)
-        self.setApplicationDisplayName(f"{settings.APP_NAME} - {settings.APP_VERSION}")
         self.setApplicationVersion(settings.APP_VERSION)
 
         self.setWindowIcon(QPixmap(str(settings.WINDOW_ICON)))
 
         self.main_window: MainWindow = MainWindow()
+        self.main_window.setWindowTitle(f"{settings.APP_NAME} - {settings.APP_VERSION}")
         self.main_window.show()
 
     # https://stackoverflow.com/a/64902020/8337847
@@ -438,7 +495,7 @@ def main():
         "icons",
         os.path.join(root, "hdri_dilate/resources/icons")
     )
-
+    matplotlib.use("QtAgg")
     try:
         app = Application([])
         sys.exit(app.exec())
