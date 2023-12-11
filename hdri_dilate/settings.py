@@ -4,7 +4,7 @@ from pathlib import Path
 from hdri_dilate.utils.filesystem import resource_path
 
 APP_NAME = "HDRI Dilate"
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.1.1"
 WINDOW_ICON = resource_path("hdri_dilate/resources/icons/app.png")
 
 LOG_PATH = Path().home() / "Logs" / "HDRI Dilate" / APP_VERSION
