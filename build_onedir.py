@@ -60,7 +60,7 @@ def pyinstaller_makespec():
     makespec_cmd = " ".join([
         "pyi-makespec",
         "--onedir",
-        # "--hide-console hide-late",
+        "--hide-console hide-late",
         "--hiddenimport xmlrpc",
         "--hiddenimport xmlrpc.client",
         "--add-data app.png;.",
