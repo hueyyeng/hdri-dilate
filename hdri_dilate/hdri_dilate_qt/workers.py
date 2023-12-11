@@ -14,6 +14,7 @@ THREAD_POOL: QThreadPool = QThreadPool.globalInstance()
 
 
 class WorkerSignals(QObject):
+    measure_time_result = Signal(float)
     started = Signal()
     finished = Signal()
     error = Signal(tuple)
@@ -69,10 +70,11 @@ class Worker(QRunnable):
         start_time = time.perf_counter()
         func(*args, **kwargs)
         end_time = time.perf_counter()
+        result_duration = end_time - start_time
+        self.signals.measure_time_result.emit(result_duration)
         if not self.disable_measure_time:
-            logger.debug(
-                f"Overall {self.__class__.__name__} took {end_time - start_time:0.4f} secs"
-            )
+            result_msg = f"Overall {self.__class__.__name__} took {result_duration:0.4f} secs"
+            logger.debug(result_msg)
 
 
 def run_func_in_thread(

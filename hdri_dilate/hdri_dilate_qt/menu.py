@@ -1,3 +1,8 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from main import MainWindow
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMenu, QMenuBar
@@ -6,8 +11,9 @@ from hdri_dilate.hdri_dilate_qt import get_app_instance, tr
 
 
 class MainWindowMenuBar(QMenuBar):
-    def __init__(self, parent=None):
+    def __init__(self, parent: "MainWindow"):
         super().__init__(parent)
+        self.parent_ = parent
 
         # File menu
         file_menu = QMenu(tr("&File"), self)

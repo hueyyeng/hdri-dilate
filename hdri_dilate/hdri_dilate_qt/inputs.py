@@ -12,8 +12,8 @@ from hdri_dilate.hdri_dilate_qt import tr
 
 class CrossPlatformPathLineEdit(QLineEdit):
     pattern = (
-        r'^(\\\\.*|\/.*|[A-Z]:\\(?:([^<>:"\/\\|'
-        r'?*]*[^<>:"\/\\|?*.]\\|..\\)*([^<>:"\/\\|?*]*[^<>:"\/\\|?*.]\\?|..\\))?)'
+        r'^(\\\\.*|\/.*|[A-Z]:\\(?:([^<>:"\/\\|?*]*[^<>:"\/\\|?*.]\\|..\\)'
+        r'*([^<>:"\/\\|?*]*[^<>:"\/\\|?*.]\\?|..\\))?)$'
     )
 
     def __init__(self, parent=None):
@@ -101,3 +101,7 @@ class BasePathSelectorWidget(QWidget):
 
 class FilePathSelectorWidget(BasePathSelectorWidget):
     pass
+
+
+class FolderPathSelectorWidget(BasePathSelectorWidget):
+    FILE_MODE = QFileDialog.FileMode.Directory
