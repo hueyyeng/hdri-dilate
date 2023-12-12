@@ -67,6 +67,7 @@ class DilateWorker(Worker):
         self.dilate_iteration = 3
         self.dilate_size = 2  # FIXME: Using high dilate size is slow...
         self.dilate_shape = MorphShape.RECTANGLE
+        self.terminate_early = False
         self.use_bgr_order = False
         self.use_blur = True
         self.blur_size = 3
@@ -146,6 +147,12 @@ class DilateWorker(Worker):
 
         hdri_channels_averaged = cv2.mean(hdri_input, mask=cc_mask)[:3]
         is_exceeded_threshold = any(channel >= self.threshold for channel in hdri_channels_averaged)
+        if self.terminate_early:
+            for c in hdri_channels_averaged:
+                if c <= self.threshold:
+                    print(f"Terminating early. Found channel value {c} below threshold.")
+                    is_exceeded_threshold = False
+                    break
 
         print(
             f"Iteration {self.iteration} - CC {cc_label} = "
@@ -196,6 +203,7 @@ class DilateWorker(Worker):
         self.dilate_iteration = self.parent.dilate_iteration_spinbox.value()
         self.dilate_size = self.parent.dilate_size_spinbox.value()
         self.dilate_shape = self.parent.dilate_shape_combobox.currentText()
+        self.terminate_early = self.parent.terminate_early_checkbox.isChecked()
         self.use_bgr_order = self.parent.use_bgr_order_checkbox.isChecked()
         self.use_blur = self.parent.use_blur_checkbox.isChecked()
         self.blur_size = self.parent.blur_size_spinbox.value()

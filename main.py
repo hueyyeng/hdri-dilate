@@ -212,6 +212,8 @@ class DilateProgressDialog(QDialog):
                 f"Intensity: {self.parent_.intensity_spinbox.value()}"
                 f"{DOUBLE_LINEBREAKS[0]}"
                 f"Threshold: {self.parent_.threshold_spinbox.value()}"
+                f"{DOUBLE_LINEBREAKS[0]}"
+                f"Terminate Early: {self.parent_.terminate_early_checkbox.isChecked()}"
             )
             text3 = (
                 f"Use Blur: {self.parent_.use_blur_checkbox.isChecked()}"
@@ -322,6 +324,9 @@ class MainWindow(ComelMainWindowWrapper):
         self.use_bgr_order_checkbox = CheckBox(self)
         self.use_bgr_order_checkbox.setChecked(False)
 
+        self.terminate_early_checkbox = CheckBox(self)
+        self.terminate_early_checkbox.setChecked(False)
+
         self.use_blur_checkbox = CheckBox(self)
         self.use_blur_checkbox.setChecked(True)
 
@@ -368,6 +373,7 @@ class MainWindow(ComelMainWindowWrapper):
         self.advanced_form.addRow(tr("Dilate Size (px)"), self.dilate_size_spinbox)
         self.advanced_form.addRow(tr("Dilate Iteration"), self.dilate_iteration_spinbox)
         self.advanced_form.addRow(tr("Dilate Shape"), self.dilate_shape_combobox)
+        self.advanced_form.addRow(tr("Terminate Early When Any Channel Hit Threshold"), self.terminate_early_checkbox)
         self.advanced_form.addRow(tr("Use BGR Order"), self.use_bgr_order_checkbox)
         self.advanced_form.addRow(tr("Use Blur"), self.use_blur_checkbox)
         self.advanced_form.addRow(tr("Blur Size (px)"), self.blur_size_spinbox)
