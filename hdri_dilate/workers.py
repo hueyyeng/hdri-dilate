@@ -64,6 +64,7 @@ class DilateWorker(Worker):
         self.image_path = ""
         self.intensity = 15.0
         self.threshold = 1.0
+        self.final_intensity_multiplier = 1.0
         self.dilate_iteration = 3
         self.dilate_size = 2  # FIXME: Using high dilate size is slow...
         self.dilate_shape = MorphShape.RECTANGLE
@@ -77,7 +78,7 @@ class DilateWorker(Worker):
         self.checkpoint_iteration = 0
         self.iteration_cap = 100
 
-        self.element = cv2.getStructuringElement(
+        self.structuring_element = cv2.getStructuringElement(
             get_morph_shape(self.dilate_shape),
             (self.dilate_size * self.dilate_iteration + 1, self.dilate_size * self.dilate_iteration + 1),
             (self.dilate_iteration, self.dilate_iteration)
@@ -135,7 +136,7 @@ class DilateWorker(Worker):
 
         self.dilated_cc_mask = cv2.dilate(
             cc_mask,
-            self.element,
+            self.structuring_element,
         )
         self.temp_dilated_cc_mask = cv2.subtract(self.threshold_mask, self.dilated_cc_mask)
         self.intersection = cv2.bitwise_and(self.dilated_cc_mask, self.temp_dilated_cc_mask)
@@ -145,7 +146,11 @@ class DilateWorker(Worker):
         if is_export_debug and self.iteration % export_debug_interval == 0:
             self._export_four_way(self.dilated_cc_mask)
 
-        hdri_channels_averaged = cv2.mean(hdri_input, mask=cc_mask)[:3]
+        hdri_channels_averaged = cv2.mean(hdri_input, mask=self.dilated_cc_mask)[:3]
+        hdri_channels_averaged = tuple(
+            channel * self.final_intensity_multiplier
+            for channel in hdri_channels_averaged
+        )
         is_exceeded_threshold = any(channel >= self.threshold for channel in hdri_channels_averaged)
         if self.terminate_early:
             for c in hdri_channels_averaged:
@@ -198,6 +203,7 @@ class DilateWorker(Worker):
 
     def _run(self):
         self.image_path = self.parent.image_path_lineedit.get_path()
+        self.final_intensity_multiplier = self.parent.final_intensity_multiplier_spinbox.value()
         self.intensity = self.parent.intensity_spinbox.value()
         self.threshold = self.parent.threshold_spinbox.value()
         self.dilate_iteration = self.parent.dilate_iteration_spinbox.value()
@@ -247,7 +253,7 @@ class DilateWorker(Worker):
         self.signals.progress_stage.emit(tr("Image loaded"))
 
         # Prepare Kernel
-        self.element = cv2.getStructuringElement(
+        self.structuring_element = cv2.getStructuringElement(
             get_morph_shape(self.dilate_shape),
             (self.dilate_size * self.dilate_iteration + 1, self.dilate_size * self.dilate_iteration + 1),
             (self.dilate_iteration, self.dilate_iteration)

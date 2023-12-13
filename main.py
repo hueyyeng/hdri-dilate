@@ -216,6 +216,8 @@ class DilateProgressDialog(QDialog):
                 f"Terminate Early: {self.parent_.terminate_early_checkbox.isChecked()}"
             )
             text3 = (
+                f"Final Intensity Multiplier: {self.parent_.final_intensity_multiplier_spinbox.value()}"
+                f"{DOUBLE_LINEBREAKS[0]}"
                 f"Use Blur: {self.parent_.use_blur_checkbox.isChecked()}"
                 f"{DOUBLE_LINEBREAKS[0]}"
                 f"Blur Size: {self.parent_.blur_size_spinbox.value()}"
@@ -346,6 +348,12 @@ class MainWindow(ComelMainWindowWrapper):
         self.dilate_size_spinbox.setMinimum(2)
         self.dilate_size_spinbox.setMaximum(50)
 
+        self.final_intensity_multiplier_spinbox = QDoubleSpinBox(self)
+        self.final_intensity_multiplier_spinbox.setValue(1.00)
+        self.final_intensity_multiplier_spinbox.setSingleStep(0.01)
+        self.final_intensity_multiplier_spinbox.setMinimum(0.01)
+        self.final_intensity_multiplier_spinbox.setMaximum(10.00)
+
         self.intensity_spinbox = QDoubleSpinBox(self)
         self.intensity_spinbox.setValue(15.0)
         self.intensity_spinbox.setSingleStep(0.1)
@@ -369,6 +377,7 @@ class MainWindow(ComelMainWindowWrapper):
         form.addRow(tr("Save Output"), self.save_output_checkbox)
         form.addRow(tr("Intensity"), self.intensity_spinbox)
         form.addRow(tr("Threshold"), self.threshold_spinbox)
+        form.addRow(tr("Final Intensity Multiplier"), self.final_intensity_multiplier_spinbox)
 
         self.advanced_form.addRow(tr("Dilate Size (px)"), self.dilate_size_spinbox)
         self.advanced_form.addRow(tr("Dilate Iteration"), self.dilate_iteration_spinbox)
