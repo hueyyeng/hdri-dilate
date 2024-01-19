@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 from pathlib import Path
 
@@ -7,6 +9,7 @@ from PySide6.QtGui import *
 from PySide6.QtWidgets import *
 
 from hdri_dilate.exr import get_exr_header
+from hdri_dilate.hdri_dilate_qt import tr
 
 
 class PropertyModel(QStandardItemModel):
@@ -45,10 +48,25 @@ class PropertyProxyModel(QSortFilterProxyModel):
 
 
 class PropertyTreeView(QTreeView):
-    def __init__(self, parent=None):
+    def __init__(self, parent: "PropertyPanelWidget"):
         super().__init__(parent)
         self.setSortingEnabled(True)
         self.setRootIsDecorated(False)
+
+        self.is_file_selected: bool = False
+        self.is_file_valid: bool = False
+
+    def paintEvent(self, e: QPaintEvent):
+        super().paintEvent(e)
+        if self.model() and self.model().rowCount() > 0:
+            return
+
+        msg = tr("Invalid/No Metadata")
+        if not self.is_file_selected and not self.is_file_valid:
+            msg = tr("Select a file to view metadata")
+
+        p = QPainter(self.viewport())
+        p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, msg)
 
 
 class PropertyPanelWidget(QWidget):
@@ -67,7 +85,7 @@ class PropertyPanelWidget(QWidget):
 
         self.search_lineedit = SearchLineEdit(self.proxy_model, self)
         self.search_lineedit.setText("")
-        self.treeview = PropertyTreeView()
+        self.treeview = PropertyTreeView(self)
         # self.treeview.clicked.connect(self.get_property_name)
         self.treeview.setModel(self.proxy_model)
 
@@ -77,8 +95,22 @@ class PropertyPanelWidget(QWidget):
         layout.addWidget(self.search_lineedit)
         layout.addWidget(self.treeview)
 
-    def populate(self, data: dict):
+    def populate(self, data: dict | None):
         self.model.reset()
+
+        # FIXME: Simplify this condition checking
+        self.treeview.is_file_selected = True
+        self.treeview.is_file_valid = True
+        if data is None:
+            self.treeview.is_file_selected = False
+            self.treeview.is_file_valid = False
+            return
+
+        if data is False:
+            self.treeview.is_file_selected = True
+            self.treeview.is_file_valid = False
+            return
+
         keywords_color = QColor("#ffb8e9")
         for k, v in data.items():
             property_item = QStandardItem()
@@ -124,11 +156,17 @@ class FilePathToolbar(QWidget):
 
         self.path_lineedit = QLineEdit()
         self.path_lineedit.setPlaceholderText("Select Folder")
+        self.path_lineedit.returnPressed.connect(self._return_pressed)
         layout.addWidget(self.path_lineedit)
         self.tool_btn = QToolButton()
         self.tool_btn.setText("Browse")
         self.tool_btn.clicked.connect(self.select)
         layout.addWidget(self.tool_btn)
+
+    def _return_pressed(self):
+        file_path = self.get_path()
+        self.path_lineedit.setText(file_path)
+        self.selected.emit(file_path)
 
     def select(self):
         file_dialog = QFileDialog()
@@ -225,30 +263,33 @@ class FileBrowserWidget(QWidget):
         self.fsm_treeview = QTreeView(self)
         self.fsm_treeview.setSelectionMode(self.fsm_treeview.SelectionMode.ExtendedSelection)
         self.fsm_treeview.setSortingEnabled(True)
-        self.fsm_treeview.clicked.connect(self.load_metadata)
+        self.fsm_treeview.clicked.connect(self._load_metadata)
         self.fsm_treeview.setModel(self.fsm)
-        self.fsm_treeview.selectionModel().selectionChanged.connect(self.select_load_metadata)
+        self.fsm_treeview.selectionModel().selectionChanged.connect(self._load_metadata_changed)
         self.fsm_treeview.setColumnWidth(0, 200)
         self.layout_.addWidget(self.fsm_treeview)
 
     def set_fsm_path(self, folder_path: str):
+        self.exif_founded.emit(None)
         self.fsm_treeview.setRootIndex(
             self.fsm.index(folder_path)
         )
         self.fsm_treeview.resizeColumnToContents(1)
 
-    def select_load_metadata(self):
+    def _load_metadata_changed(self):
         idx = self.fsm_treeview.currentIndex()
         idx = idx.siblingAtColumn(0)
-        self.load_metadata(idx)
+        self._load_metadata(idx)
 
-    def load_metadata(self, idx: QModelIndex):
+    def _load_metadata(self, idx: QModelIndex):
         if not idx:
+            self.exif_founded.emit(False)
             return
 
         file_path = self.fsm.filePath(idx)
         fp = Path(file_path)
         if not fp.is_file():
+            self.exif_founded.emit(False)
             return
 
         if "exr" in fp.suffix.lower():
@@ -261,6 +302,7 @@ class FileBrowserWidget(QWidget):
                 self.exif_founded.emit(data)
             except (RuntimeError, Exception):
                 print("Unsupported file")
+                self.exif_founded.emit(False)
 
 
 class ExrRawMetadataViewerDialog(QDialog):
