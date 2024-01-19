@@ -42,6 +42,13 @@ class Raw2AcesWorker(Worker):
     def _run(self):
         model = self.parent.parent_.model
         parent = self.parent
+        r2a_exe = Path(parent.r2a_path_lineedit.get_path())
+        if not r2a_exe.exists():
+            self.parent.run_btn.setText("rawtoaces.exe not found!")
+            qWait(1500)
+            self.parent.run_btn.setText("Run")
+            return
+
         cmd = (
             f"{parent.r2a_path_lineedit.get_path()} "
             f"--wb-method {parent.white_balance_combobox.currentIndex()} "
@@ -67,7 +74,9 @@ class Raw2AcesWorker(Worker):
             status_item.setText("PROCESSING")
             file_name = input_item.text()
             self.signals.progress_file.emit(file_name)
+            print(f"{cmd=}")
             new_cmd = cmd + file_name
+            print(f"{new_cmd=}")
             process = subprocess.Popen(
                 new_cmd.split(),
                 stdout=subprocess.PIPE,

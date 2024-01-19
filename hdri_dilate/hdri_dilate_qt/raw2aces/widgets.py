@@ -507,8 +507,12 @@ class Raw2AcesFormWidget(FormNoSideMargins):
         self.run_btn.clicked.connect(self._run)
         self.addRow("", self.run_btn)
 
-        rawtoaces_path = Path(os.getcwd()) / "hdri_dilate" / "resources" / "bin" / "rawtoaces.exe"
-        self.r2a_path_lineedit.set_path(str(rawtoaces_path))
+        r2a_exe = Path(os.getcwd()) / "hdri_dilate" / "resources" / "bin" / "rawtoaces.exe"
+        if not r2a_exe.exists():
+            # Workaround for pyinstaller _internal folder...
+            r2a_exe = Path(os.getcwd()) / "_internal" / "hdri_dilate" / "resources" / "bin" / "rawtoaces.exe"
+
+        self.r2a_path_lineedit.set_path(str(r2a_exe))
 
     def _run(self):
         btn = self.run_btn
