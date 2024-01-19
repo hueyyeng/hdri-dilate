@@ -8,8 +8,64 @@ from PySide6.QtCore import *
 from PySide6.QtGui import *
 from PySide6.QtWidgets import *
 
+from hdri_dilate.constants import icons
 from hdri_dilate.exr import get_exr_header
 from hdri_dilate.hdri_dilate_qt import tr
+from hdri_dilate.hdri_dilate_qt.forms import (
+    FormNoSideMargins,
+)
+from hdri_dilate.hdri_dilate_qt.inputs import (
+    FilePathSelectorWidget,
+)
+from hdri_dilate.hdri_dilate_qt.raw2aces.workers import (
+    Raw2AcesWorker,
+)
+from hdri_dilate.hdri_dilate_qt.workers import (
+    run_worker_in_thread,
+)
+
+RAW_FORMATS = (
+    "*.CR2",
+    "*.RAF",
+    "*.RW2",
+    "*.ERF",
+    "*.NRW",
+    "*.NEF",
+    "*.ARW",
+    "*.RWZ",
+    "*.EIP",
+    "*.DNG",
+    "*.BAY",
+    "*.DCR",
+    "*.GPR",
+    "*.RAW",
+    "*.CRW",
+    "*.3FR",
+    "*.SR2",
+    "*.K25",
+    "*.KC2",
+    "*.MEF",
+    "*.DNG",
+    "*.CS1",
+    "*.ORF",
+    "*.MOS",
+    "*.KDC",
+    "*.CR3",
+    "*.ARI",
+    "*.SRF",
+    "*.SRW",
+    "*.J6I",
+    "*.FFF",
+    "*.MRW",
+    "*.MFW",
+    "*.RWL",
+    "*.X3F",
+    "*.PEF",
+    "*.IIQ",
+    "*.CXI",
+    "*.NKSC",
+    "*.MDC",
+)
 
 
 class PropertyModel(QStandardItemModel):
@@ -199,46 +255,7 @@ class ImageOnlyFileSystemModel(QFileSystemModel):
                 "*.tiff",
                 "*.exr",
                 "*.hdr",
-                "*.CR2",
-                "*.RAF",
-                "*.RW2",
-                "*.ERF",
-                "*.NRW",
-                "*.NEF",
-                "*.ARW",
-                "*.RWZ",
-                "*.EIP",
-                "*.DNG",
-                "*.BAY",
-                "*.DCR",
-                "*.GPR",
-                "*.RAW",
-                "*.CRW",
-                "*.3FR",
-                "*.SR2",
-                "*.K25",
-                "*.KC2",
-                "*.MEF",
-                "*.DNG",
-                "*.CS1",
-                "*.ORF",
-                "*.MOS",
-                "*.KDC",
-                "*.CR3",
-                "*.ARI",
-                "*.SRF",
-                "*.SRW",
-                "*.J6I",
-                "*.FFF",
-                "*.MRW",
-                "*.MFW",
-                "*.RWL",
-                "*.X3F",
-                "*.PEF",
-                "*.IIQ",
-                "*.CXI",
-                "*.NKSC",
-                "*.MDC",
+                *RAW_FORMATS,
             )
         )
         self.setNameFilterDisables(False)
@@ -321,3 +338,205 @@ class ExrRawMetadataViewerDialog(QDialog):
         layout.addWidget(self.property_panel)
 
         self.file_browser.exif_founded.connect(self.property_panel.populate)
+
+
+class Raw2AcesContainer(QSplitter):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setChildrenCollapsible(False)
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setHandleWidth(8)
+        self.setObjectName(f"{self.__class__.__name__}")
+        self.setOrientation(Qt.Orientation.Vertical)
+
+
+class Raw2AcesModel(QStandardItemModel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.reset_headers()
+
+    def reset_headers(self):
+        self.setHorizontalHeaderLabels(
+            [
+                "Input",
+                "Output",
+                "Status",
+            ]
+        )
+
+    def reset(self):
+        self.clear()
+        self.reset_headers()
+
+
+class Raw2AcesRunBtn(QPushButton):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setAutoDefault(False)
+        self.spinner = QMovie(icons.SPINNER)
+        self.default_text = "Run"
+        self.spinner_text = "Processing"
+        self.setStyleSheet(
+            """
+            QPushButton:disabled {
+                color: #CACACA;
+                background-color: #DF5E5E;
+            }
+            """
+        )
+
+    def start_spinner(self):
+        self.spinner.frameChanged.connect(self.update_spinner)
+        self.spinner.start()
+
+    def update_spinner(self):
+        self.setEnabled(False)
+        self.setText(self.spinner_text)
+        self.setIcon(QIcon(self.spinner.currentPixmap()))
+
+    def stop_spinner(self):
+        self.spinner.stop()
+        self.setIcon(QIcon())
+        self.setText(self.default_text)
+        self.setEnabled(True)
+
+
+class Raw2AcesFileTreeView(QTreeView):
+    def __init__(self, parent: "Raw2AcesDialog"):
+        super().__init__(parent)
+        self.setSortingEnabled(True)
+        self.setRootIsDecorated(False)
+
+        self.setAcceptDrops(True)
+        self.setDragEnabled(True)
+        self.setDragDropMode(QTreeView.DragDropMode.InternalMove)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.setSelectionMode(QTreeView.SelectionMode.SingleSelection)
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event: QDragMoveEvent):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event: QDropEvent):
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            for url in urls:
+                file_path = url.toLocalFile()
+                file_format = f"*{file_path[-4:]}"
+                if file_format not in RAW_FORMATS:
+                    continue
+
+                self.add_file_item(file_path)
+
+    def add_file_item(self, file_path: str):
+        item = QStandardItem(file_path)
+        model: QStandardItemModel = self.model()
+        model.appendRow(item)
+        item_idx = model.indexFromItem(item)
+
+        raw_path = Path(file_path)
+        raw_stem = raw_path.stem
+        exr_path = raw_path.parent / f"{raw_stem}_aces.exr"
+        if exr_path.exists():
+            status_item = QStandardItem("WARNING Found existing aces exr file. Will be overridden!")
+        else:
+            status_item = QStandardItem("READY")
+
+        output_item = QStandardItem()
+        model.setItem(item_idx.row(), 1, output_item)
+        model.setItem(item_idx.row(), 2, status_item)
+
+
+class Raw2AcesFormWidget(FormNoSideMargins):
+    def __init__(self, parent: "Raw2AcesDialog"):
+        super().__init__(parent)
+        self.parent_ = parent
+        self.r2a_path_lineedit = FilePathSelectorWidget(self)
+        self.white_balance_combobox = QComboBox(self)
+        self.white_balance_combobox.setToolTip(
+            tr(
+                "White balance factor calculation method. "
+                "Default 0"
+            )
+        )
+        self.white_balance_combobox.addItems(
+            [
+                tr("0 - Use File Metadata"),
+                tr("1 - User specified illuminant [str]"),
+                tr("2 - Average the whole image for white balance"),
+                tr("3 - Average a grey box for white balance <x y w h>"),
+                tr("4 - Use Custom White Balance <r g b g>"),
+            ]
+        )
+
+        self.matrix_combobox = QComboBox(self)
+        self.matrix_combobox.setToolTip(
+            tr(
+                "IDT matrix calculation method. "
+                "Default 0"
+            )
+        )
+        self.matrix_combobox.addItems(
+            [
+                tr("0 - Calculate matrix from camera spec sens"),
+                tr("1 - Use file metadata color matrix"),
+                tr("2 - Use Adobe coeffs included in libraw"),
+            ]
+        )
+        self.matrix_combobox.setCurrentIndex(1)
+
+        self.headroom_spinbox = QDoubleSpinBox(self)
+        self.headroom_spinbox.setToolTip(
+            tr("Set highlight headroom factor. Default 6.00")
+        )
+        self.headroom_spinbox.setMinimum(0.01)
+        self.headroom_spinbox.setMaximum(100.00)
+        self.headroom_spinbox.setValue(6.00)
+        self.headroom_spinbox.setSingleStep(0.10)
+
+        self.addRow("rawtoaces.exe path", self.r2a_path_lineedit)
+        self.addRow("White Balance", self.white_balance_combobox)
+        self.addRow("IDT Matrix Calculation", self.matrix_combobox)
+        self.addRow("Highlight Headroom", self.headroom_spinbox)
+
+        self.run_btn = Raw2AcesRunBtn("Run")
+        self.run_btn.clicked.connect(self._run)
+        self.addRow("", self.run_btn)
+
+        rawtoaces_path = Path(os.getcwd()) / "hdri_dilate" / "resources" / "bin" / "rawtoaces.exe"
+        self.r2a_path_lineedit.set_path(str(rawtoaces_path))
+
+    def _run(self):
+        btn = self.run_btn
+        btn.start_spinner()
+        worker = Raw2AcesWorker(self)
+        run_worker_in_thread(
+            worker,
+            on_finish=btn.stop_spinner
+        )
+
+
+class Raw2AcesDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Raw2Aces Converter")
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint)
+        self.setGeometry(100, 100, 800, 600)
+
+        self.params = Raw2AcesFormWidget(self)
+        self.treeview = Raw2AcesFileTreeView(self)
+        self.model = Raw2AcesModel(self)
+        self.treeview.setModel(self.model)
+
+        container = Raw2AcesContainer(self)
+        container.addWidget(self.params)
+        container.addWidget(self.treeview)
+        container.setStretchFactor(0, 0)
+        container.setStretchFactor(1, 1)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(container)

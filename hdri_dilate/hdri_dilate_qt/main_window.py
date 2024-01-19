@@ -31,6 +31,7 @@ from hdri_dilate.hdri_dilate_qt.message_box import (
 )
 from hdri_dilate.hdri_dilate_qt.raw2aces.widgets import (
     ExrRawMetadataViewerDialog,
+    Raw2AcesDialog,
 )
 from hdri_dilate.hdri_dilate_qt.toolbars import (
     VerticalToolBar,
@@ -63,6 +64,9 @@ class MainWindow(ComelMainWindowWrapper):
         metadata_dialog_action = QAction(tr("View EXR/Raw &Metadata..."), self)
         metadata_dialog_action.triggered.connect(self.show_exr_raw_metadata_dialog)
         self.menu_bar.tools_menu.addAction(metadata_dialog_action)
+        raw2aces_dialog_action = QAction(tr("&Raw2Aces..."), self)
+        raw2aces_dialog_action.triggered.connect(self.show_raw2aces_dialog)
+        self.menu_bar.tools_menu.addAction(raw2aces_dialog_action)
         self.setMenuBar(self.menu_bar)
 
         # # Sidebar widgets
@@ -173,7 +177,11 @@ class MainWindow(ComelMainWindowWrapper):
 
     def show_exr_raw_metadata_dialog(self):
         dlg = ExrRawMetadataViewerDialog(self)
-        dlg.exec()
+        dlg.show()
+
+    def show_raw2aces_dialog(self):
+        dlg = Raw2AcesDialog(self)
+        dlg.show()
 
     def odd_blur_size(self):
         blur_size = self.blur_size_spinbox.value()
