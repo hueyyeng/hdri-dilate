@@ -4,7 +4,7 @@ import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from main import Application
+    from .application import Application
 
 from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QApplication

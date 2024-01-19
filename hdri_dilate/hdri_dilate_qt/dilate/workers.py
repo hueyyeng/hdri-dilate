@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from main import MainWindow
+    from hdri_dilate.hdri_dilate_qt.main_window import MainWindow
 
 import cv2
 import numpy as np
