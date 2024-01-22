@@ -1,3 +1,4 @@
+*.json
 _tmp/
 image/
 export/

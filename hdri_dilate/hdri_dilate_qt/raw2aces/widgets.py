@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime
+import json
 import os
 from pathlib import Path
 
@@ -413,6 +415,8 @@ class Raw2AcesFileTreeView(QTreeView):
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.setSelectionMode(QTreeView.SelectionMode.SingleSelection)
 
+        self.files = set()
+
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
@@ -425,7 +429,10 @@ class Raw2AcesFileTreeView(QTreeView):
         if event.mimeData().hasUrls():
             urls = event.mimeData().urls()
             for url in urls:
-                file_path = url.toLocalFile()
+                file_path = os.path.normpath(url.toLocalFile())
+                if file_path in self.files:
+                    continue
+
                 file_format = f"*{file_path[-4:]}"
                 if file_format not in RAW_FORMATS:
                     continue
@@ -449,6 +456,101 @@ class Raw2AcesFileTreeView(QTreeView):
         output_item = QStandardItem()
         model.setItem(item_idx.row(), 1, output_item)
         model.setItem(item_idx.row(), 2, status_item)
+
+        self.files.add(file_path)
+
+
+class Raw2AcesFileWidget(QWidget):
+    def __init__(self, parent: "Raw2AcesDialog"):
+        super().__init__(parent)
+        self.parent_ = parent
+        self.layout_ = QVBoxLayout(self)
+        self._treeview: Raw2AcesFileTreeView | None = None
+
+        self.clear_btn = QPushButton(tr("Clear"))
+        self.export_list_btn = QPushButton(tr("Export JSON"))
+        self.import_list_btn = QPushButton(tr("Import JSON"))
+
+        self.clear_btn.clicked.connect(self._clear)
+        self.export_list_btn.clicked.connect(self._export)
+        self.import_list_btn.clicked.connect(self._import)
+
+        self.clear_btn.setAutoDefault(False)
+        self.export_list_btn.setAutoDefault(False)
+        self.import_list_btn.setAutoDefault(False)
+
+        self.clear_btn.setEnabled(False)
+        self.export_list_btn.setEnabled(False)
+        self.import_list_btn.setEnabled(False)
+
+        btn_layout = QHBoxLayout(self)
+        btn_layout.addWidget(self.import_list_btn)
+        btn_layout.addWidget(self.export_list_btn)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.clear_btn)
+
+        self.layout_.addLayout(btn_layout)
+
+    def add_treeview(self, widget: "Raw2AcesFileTreeView"):
+        if self._treeview is None:
+            self.layout_.addWidget(widget)
+            self._treeview = widget
+            self.clear_btn.setEnabled(True)
+            self.export_list_btn.setEnabled(True)
+            self.import_list_btn.setEnabled(True)
+
+    def _clear(self):
+        model: Raw2AcesModel = self._treeview.model()
+        model.reset()
+        self._treeview.files.clear()
+
+    def _import(self):
+        file_dialog = QFileDialog()
+        file_dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
+        file_dialog.setNameFilter("JSON (*.json)")
+        if not file_dialog.exec():
+            return
+
+        selected_files = file_dialog.selectedFiles()
+        if not selected_files:
+            return
+
+        file_path = os.path.normpath(selected_files[0])
+        with open(file_path, "r") as f:
+            data = json.load(f)
+
+        model: Raw2AcesModel = self._treeview.model()
+        model.reset()
+        for row_data in data["model"]:
+            foo = [
+                QStandardItem(row_data[0]),
+                QStandardItem(row_data[1]),
+                QStandardItem(row_data[2]),
+            ]
+            model.appendRow(foo)
+
+    def _export(self):
+        model: Raw2AcesModel = self._treeview.model()
+        model_data = []
+        for row_idx in range(model.rowCount()):
+            input_item: QStandardItem = model.item(row_idx, 0)
+            output_item: QStandardItem = model.item(row_idx, 1)
+            status_item: QStandardItem = model.item(row_idx, 2)
+            row_data = [
+                input_item.text(),
+                output_item.text(),
+                status_item.text(),
+            ]
+            model_data.append(row_data)
+
+        data = {
+            "model": model_data
+        }
+
+        current_time = datetime.datetime.now()
+        formatted_time = current_time.strftime("%Y%m%d_%H%M%S")
+        with open(f"rawtoaces_export_{formatted_time}.json", "w+") as f:
+            f.write(json.dumps(data, indent=4))
 
 
 class Raw2AcesFormWidget(FormNoSideMargins):
@@ -531,14 +633,16 @@ class Raw2AcesDialog(QDialog):
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint)
         self.setGeometry(100, 100, 800, 600)
 
-        self.params = Raw2AcesFormWidget(self)
+        self.settings = Raw2AcesFormWidget(self)
         self.treeview = Raw2AcesFileTreeView(self)
+        self.file_widget = Raw2AcesFileWidget(self)
+        self.file_widget.add_treeview(self.treeview)
         self.model = Raw2AcesModel(self)
         self.treeview.setModel(self.model)
 
         container = Raw2AcesContainer(self)
-        container.addWidget(self.params)
-        container.addWidget(self.treeview)
+        container.addWidget(self.settings)
+        container.addWidget(self.file_widget)
         container.setStretchFactor(0, 0)
         container.setStretchFactor(1, 1)
 
