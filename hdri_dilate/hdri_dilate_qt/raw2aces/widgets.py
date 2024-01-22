@@ -19,6 +19,13 @@ from hdri_dilate.hdri_dilate_qt.forms import (
 from hdri_dilate.hdri_dilate_qt.inputs import (
     FilePathSelectorWidget,
 )
+from hdri_dilate.hdri_dilate_qt.message_box import (
+    NewMessageBox,
+)
+from hdri_dilate.hdri_dilate_qt.raw2aces.models import (
+    Raw2AcesModel,
+    Raw2AcesStatusItem,
+)
 from hdri_dilate.hdri_dilate_qt.raw2aces.workers import (
     Raw2AcesWorker,
 )
@@ -352,25 +359,6 @@ class Raw2AcesContainer(QSplitter):
         self.setOrientation(Qt.Orientation.Vertical)
 
 
-class Raw2AcesModel(QStandardItemModel):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.reset_headers()
-
-    def reset_headers(self):
-        self.setHorizontalHeaderLabels(
-            [
-                "Input",
-                "Output",
-                "Status",
-            ]
-        )
-
-    def reset(self):
-        self.clear()
-        self.reset_headers()
-
-
 class Raw2AcesRunBtn(QPushButton):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -449,9 +437,12 @@ class Raw2AcesFileTreeView(QTreeView):
         raw_stem = raw_path.stem
         exr_path = raw_path.parent / f"{raw_stem}_aces.exr"
         if exr_path.exists():
-            status_item = QStandardItem("WARNING Found existing aces exr file. Will be overridden!")
+            status_item = Raw2AcesStatusItem()
+            status_item.set_warning_status(
+                "Found existing aces exr file. Will be overridden!"
+            )
         else:
-            status_item = QStandardItem("READY")
+            status_item = Raw2AcesStatusItem.from_status(Raw2AcesStatusItem.READY)
 
         output_item = QStandardItem()
         model.setItem(item_idx.row(), 1, output_item)
@@ -468,8 +459,13 @@ class Raw2AcesFileWidget(QWidget):
         self._treeview: Raw2AcesFileTreeView | None = None
 
         self.clear_btn = QPushButton(tr("Clear"))
+        self.clear_btn.setToolTip(tr("Clear file list"))
+
         self.export_list_btn = QPushButton(tr("Export JSON"))
+        self.export_list_btn.setToolTip(tr("Export file list and settings to JSON"))
+
         self.import_list_btn = QPushButton(tr("Import JSON"))
+        self.import_list_btn.setToolTip(tr("Import file list and settings from JSON"))
 
         self.clear_btn.clicked.connect(self._clear)
         self.export_list_btn.clicked.connect(self._export)
@@ -519,37 +515,59 @@ class Raw2AcesFileWidget(QWidget):
         with open(file_path, "r") as f:
             data = json.load(f)
 
+        self.parent_.populate_settings(data["settings"])
+
         model: Raw2AcesModel = self._treeview.model()
         model.reset()
         for row_data in data["model"]:
-            foo = [
+            status, msg = row_data[2]
+            status_item = Raw2AcesStatusItem.from_status(status)
+            status_item.msg = msg
+            status_item.refresh()
+            row = [
                 QStandardItem(row_data[0]),
                 QStandardItem(row_data[1]),
-                QStandardItem(row_data[2]),
+                status_item,
             ]
-            model.appendRow(foo)
+            model.appendRow(row)
 
     def _export(self):
+        current_time = datetime.datetime.now()
+        formatted_time = current_time.strftime("%Y%m%d_%H%M%S")
+
+        temp_filename = f"rawtoaces_export_{formatted_time}.json"
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            tr("Save JSON File"),
+            temp_filename,
+            tr("JSON (*.json)"),
+        )
+        if not filename:
+            return
+
         model: Raw2AcesModel = self._treeview.model()
         model_data = []
         for row_idx in range(model.rowCount()):
             input_item: QStandardItem = model.item(row_idx, 0)
             output_item: QStandardItem = model.item(row_idx, 1)
-            status_item: QStandardItem = model.item(row_idx, 2)
+            status_item: Raw2AcesStatusItem = model.item(row_idx, 2)
             row_data = [
                 input_item.text(),
                 output_item.text(),
-                status_item.text(),
+                [
+                    status_item.get_status(),
+                    status_item.msg,
+                ],
             ]
             model_data.append(row_data)
 
         data = {
-            "model": model_data
+            "datetime": current_time.isoformat(),
+            "settings": self.parent_.get_settings(),
+            "model": model_data,
         }
 
-        current_time = datetime.datetime.now()
-        formatted_time = current_time.strftime("%Y%m%d_%H%M%S")
-        with open(f"rawtoaces_export_{formatted_time}.json", "w+") as f:
+        with open(filename, "w+") as f:
             f.write(json.dumps(data, indent=4))
 
 
@@ -600,10 +618,19 @@ class Raw2AcesFormWidget(FormNoSideMargins):
         self.headroom_spinbox.setValue(6.00)
         self.headroom_spinbox.setSingleStep(0.10)
 
+        self.process_count_spinbox = QSpinBox(self)
+        self.process_count_spinbox.setToolTip(
+            tr("Max rawtoaces.exe process count to spawn. Default 1")
+        )
+        self.process_count_spinbox.setMinimum(1)
+        self.process_count_spinbox.setMaximum(10)
+        self.process_count_spinbox.setValue(1)
+
         self.addRow("rawtoaces.exe path", self.r2a_path_lineedit)
         self.addRow("White Balance", self.white_balance_combobox)
         self.addRow("IDT Matrix Calculation", self.matrix_combobox)
         self.addRow("Highlight Headroom", self.headroom_spinbox)
+        self.addRow("rawtoaces.exe Process Count", self.process_count_spinbox)
 
         self.run_btn = Raw2AcesRunBtn("Run")
         self.run_btn.clicked.connect(self._run)
@@ -616,7 +643,23 @@ class Raw2AcesFormWidget(FormNoSideMargins):
 
         self.r2a_path_lineedit.set_path(str(r2a_exe))
 
+    def _validate_r2a_exe(self) -> bool:
+        r2a_exe = Path(self.r2a_path_lineedit.get_path())
+        if r2a_exe.exists():
+            return True
+
+        title = tr("Warning")
+        msg = tr("rawtoaces.exe not found!")
+        NewMessageBox(self).warning(
+            title=title,
+            text=msg,
+        )
+        return False
+
     def _run(self):
+        if not self._validate_r2a_exe():
+            return
+
         btn = self.run_btn
         btn.start_spinner()
         worker = Raw2AcesWorker(self)
@@ -627,8 +670,22 @@ class Raw2AcesFormWidget(FormNoSideMargins):
 
 
 class Raw2AcesDialog(QDialog):
+    width_padding = 8
+    height_padding = round(width_padding / 2)
+
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setStyleSheet(
+            f"""
+              QPushButton {{
+                  min-width: 64px;
+                  padding-top: {self.height_padding}px;
+                  padding-bottom: {self.height_padding}px;
+                  padding-left: {self.width_padding}px;
+                  padding-right: {self.width_padding}px;
+              }}
+              """
+        )
         self.setWindowTitle("Raw2Aces Converter")
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint)
         self.setGeometry(100, 100, 800, 600)
@@ -648,3 +705,18 @@ class Raw2AcesDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.addWidget(container)
+
+    def get_settings(self) -> dict:
+        settings = {
+            "white_balance": self.settings.white_balance_combobox.currentIndex(),
+            "matrix": self.settings.matrix_combobox.currentIndex(),
+            "headroom": self.settings.headroom_spinbox.value(),
+            "process_count": self.settings.process_count_spinbox.value(),
+        }
+        return settings
+
+    def populate_settings(self, settings: dict):
+        self.settings.white_balance_combobox.setCurrentIndex(settings["white_balance"])
+        self.settings.matrix_combobox.setCurrentIndex(settings["matrix"])
+        self.settings.headroom_spinbox.setValue(settings["headroom"])
+        self.settings.process_count_spinbox.setValue(settings["process_count"])
