@@ -56,12 +56,22 @@ class Raw2AcesWorker(Worker):
         max_process_count = parent.process_count_spinbox.value()
         max_tries = 2
 
-        cmd = (
-            f"{parent.r2a_path_lineedit.get_path()} "
-            f"--wb-method {parent.white_balance_combobox.currentIndex()} "
-            f"--mat-method {parent.matrix_combobox.currentIndex()} "
-            f"--headroom {parent.headroom_spinbox.value()} "
-        )
+        if parent.white_balance_custom_lineedit.isEnabled():
+            cmd = (
+                f"{parent.r2a_path_lineedit.get_path()} "
+                f"--wb-method {parent.white_balance_combobox.currentIndex()} "
+                f"{parent.white_balance_custom_lineedit.text()} "
+                f"--mat-method {parent.matrix_combobox.currentIndex()} "
+                f"--headroom {parent.headroom_spinbox.value()} "
+            )
+        else:
+            cmd = (
+                f"{parent.r2a_path_lineedit.get_path()} "
+                f"--wb-method {parent.white_balance_combobox.currentIndex()} "
+                f"--mat-method {parent.matrix_combobox.currentIndex()} "
+                f"--headroom {parent.headroom_spinbox.value()} "
+            )
+
         commands: list[tuple[str, int, int]] = []
         count = model.rowCount()
         self.signals.progress_max.emit(count + 1)
@@ -97,7 +107,12 @@ class Raw2AcesWorker(Worker):
                 try:
                     status_item: Raw2AcesStatusItem = model.item(_row_idx, 2)
                     status_item.setText("PROCESSING")
-                    running.append((subprocess.Popen(command), command, _row_idx, tries))
+                    process_ = subprocess.Popen(
+                        command.split(),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                    )
+                    running.append((process_, command, _row_idx, tries))
                     print(f"Started task {command}")
                 except OSError:
                     print(f'Failed to start command {command}')
@@ -116,6 +131,9 @@ class Raw2AcesWorker(Worker):
                         waiting.append((command, _row_idx, tries + 1))
                     else:
                         print(f"Command: {command} error-ed after {max_tries} tries")
+                        status_item.set_error_status(error.decode().strip())
+                        input_item.setData(False, Qt.ItemDataRole.UserRole)
+                        input_item.setBackground(QBrush(QColor(255, 40, 46)))
                 else:
                     input_file = command.split(" ")[-1]
                     img = pyexiv2.Image(input_file)
@@ -148,6 +166,7 @@ class Raw2AcesWorker(Worker):
                         write_exr_header(exr_path, exr_path, exr_header)
                         output_item.setText(str(exr_path))
                         status_item.set_status(Raw2AcesStatusItem.DONE)
+                        status_item.msg = ""
                         input_item.setData(True, Qt.ItemDataRole.UserRole)
                         input_item.setBackground(QBrush(QColor(40, 220, 10)))
                     except Exception as e:

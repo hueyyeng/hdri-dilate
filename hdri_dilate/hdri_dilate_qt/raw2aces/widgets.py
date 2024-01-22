@@ -450,6 +450,15 @@ class Raw2AcesFileTreeView(QTreeView):
 
         self.files.add(file_path)
 
+    def paintEvent(self, e: QPaintEvent):
+        super().paintEvent(e)
+        if self.model() and self.model().rowCount() > 0:
+            return
+
+        msg = tr("Drag and drop supported RAW files here")
+        p = QPainter(self.viewport())
+        p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, msg)
+
 
 class Raw2AcesFileWidget(QWidget):
     def __init__(self, parent: "Raw2AcesDialog"):
@@ -592,6 +601,15 @@ class Raw2AcesFormWidget(FormNoSideMargins):
                 tr("4 - Use Custom White Balance <r g b g>"),
             ]
         )
+        self.white_balance_combobox.currentIndexChanged.connect(self._check_white_balance)
+
+        self.white_balance_custom_lineedit = QLineEdit()
+        self.white_balance_custom_lineedit.setToolTip(
+            tr("The custom parameter for White Balance Mode 1, 3, 4")
+        )
+        self.white_balance_custom_lineedit.setEnabled(False)
+
+        self.white_balance_help_label = QLabel("")
 
         self.matrix_combobox = QComboBox(self)
         self.matrix_combobox.setToolTip(
@@ -619,17 +637,40 @@ class Raw2AcesFormWidget(FormNoSideMargins):
         self.headroom_spinbox.setSingleStep(0.10)
 
         self.process_count_spinbox = QSpinBox(self)
+        self.process_count_spinbox.setEnabled(False)
         self.process_count_spinbox.setToolTip(
-            tr("Max rawtoaces.exe process count to spawn. Default 1")
+            tr("Max rawtoaces.exe process count to spawn. Default 2")
         )
         self.process_count_spinbox.setMinimum(1)
         self.process_count_spinbox.setMaximum(10)
-        self.process_count_spinbox.setValue(1)
+        self.process_count_spinbox.setValue(2)
+
+        self.process_count_preset_combobox = QComboBox(self)
+        self.process_count_preset_combobox.setToolTip(
+            tr("Process count presets")
+        )
+        self.process_count_preset_combobox.addItem(
+            tr("Safe (slowest but suitable for background process) - 1"), 1
+        )
+        self.process_count_preset_combobox.addItem(
+            tr("HDD - 2"), 2
+        )
+        self.process_count_preset_combobox.addItem(
+            tr("SSD (use lower value if the program hangs frequently) - 5"), 5
+        )
+        self.process_count_preset_combobox.addItem(
+            tr("Custom"), None
+        )
+        self.process_count_preset_combobox.setCurrentIndex(1)
+        self.process_count_preset_combobox.currentIndexChanged.connect(self._set_process_count)
 
         self.addRow("rawtoaces.exe path", self.r2a_path_lineedit)
         self.addRow("White Balance", self.white_balance_combobox)
+        self.addRow("White Balance Custom Arg", self.white_balance_custom_lineedit)
+        self.addRow("", self.white_balance_help_label)
         self.addRow("IDT Matrix Calculation", self.matrix_combobox)
         self.addRow("Highlight Headroom", self.headroom_spinbox)
+        self.addRow("rawtoaces.exe Process Count Presets", self.process_count_preset_combobox)
         self.addRow("rawtoaces.exe Process Count", self.process_count_spinbox)
 
         self.run_btn = Raw2AcesRunBtn("Run")
@@ -642,6 +683,31 @@ class Raw2AcesFormWidget(FormNoSideMargins):
             r2a_exe = Path(os.getcwd()) / "_internal" / "hdri_dilate" / "resources" / "bin" / "rawtoaces.exe"
 
         self.r2a_path_lineedit.set_path(str(r2a_exe))
+
+    def _check_white_balance(self):
+        value = self.white_balance_combobox.currentIndex()
+        special_modes = {
+            1: 'The name of the illuminant e.g. "D60", "3500K"',
+            3: 'The position of the grey box e.g. "100 200 320 240"',
+            4: 'The custom white balance in float e.g. "1.0 0.5 0.2 0.5"',
+        }
+
+        label = ""
+        enabled = False
+        if value in special_modes:
+            enabled = True
+            label = special_modes[value]
+
+        self.white_balance_help_label.setText(label)
+        self.white_balance_custom_lineedit.setEnabled(enabled)
+
+    def _set_process_count(self):
+        value = self.process_count_preset_combobox.currentData()
+        if value is None:
+            self.process_count_spinbox.setEnabled(True)
+        else:
+            self.process_count_spinbox.setEnabled(False)
+            self.process_count_spinbox.setValue(value)
 
     def _validate_r2a_exe(self) -> bool:
         r2a_exe = Path(self.r2a_path_lineedit.get_path())
@@ -709,14 +775,18 @@ class Raw2AcesDialog(QDialog):
     def get_settings(self) -> dict:
         settings = {
             "white_balance": self.settings.white_balance_combobox.currentIndex(),
+            "white_balance_custom": self.settings.white_balance_custom_lineedit.text(),
             "matrix": self.settings.matrix_combobox.currentIndex(),
             "headroom": self.settings.headroom_spinbox.value(),
             "process_count": self.settings.process_count_spinbox.value(),
+            "process_count_preset": self.settings.process_count_preset_combobox.currentIndex(),
         }
         return settings
 
     def populate_settings(self, settings: dict):
         self.settings.white_balance_combobox.setCurrentIndex(settings["white_balance"])
+        self.settings.white_balance_custom_lineedit.setText(settings["white_balance_custom"])
         self.settings.matrix_combobox.setCurrentIndex(settings["matrix"])
         self.settings.headroom_spinbox.setValue(settings["headroom"])
         self.settings.process_count_spinbox.setValue(settings["process_count"])
+        self.settings.process_count_preset_combobox.setCurrentIndex(settings["process_count_preset"])
