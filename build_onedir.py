@@ -67,6 +67,7 @@ def pyinstaller_makespec():
         "--add-data hdri_dilate/resources;hdri_dilate/resources",
         # "--add-data language;language",
         "--add-data env/Lib/site-packages/comel;comel",
+        "--add-data env/Lib/site-packages/pyexiv2;pyexiv2",
         f"-i {app_icon}",
         f"--name {app_name}",
         "main.py",

@@ -101,3 +101,17 @@ def write_exr(hdr_image: np.ndarray, exr_path: str | Path, exr_header: dict, use
     exr_output = OpenEXR.OutputFile(str(exr_path), exr_header)
     exr_output.writePixels(dict(pixels))
     exr_output.close()
+
+
+def write_exr_header(input_path: str | Path, output_path: str | Path, exr_header: dict):
+    exr_input = OpenEXR.InputFile(str(input_path))
+    pixel_type = Imath.PixelType(Imath.PixelType.HALF)
+    img_R, img_G, img_B = exr_input.channels("RGB", pixel_type)
+    pixels = [
+            ("R", img_R),
+            ("G", img_G),
+            ("B", img_B),
+        ]
+    exr_output = OpenEXR.OutputFile(str(output_path), exr_header)
+    exr_output.writePixels(dict(pixels))
+    exr_output.close()

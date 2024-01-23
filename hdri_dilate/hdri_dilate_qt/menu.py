@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
-    from main import MainWindow
+    from hdri_dilate.hdri_dilate_qt.main_window import MainWindow
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
@@ -34,6 +36,10 @@ class MainWindowMenuBar(QMenuBar):
         view_toggle_theme_action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
         view_menu.addAction(view_toggle_theme_action)
         self.addMenu(view_menu)
+
+        # Tools menu
+        self.tools_menu = QMenu(tr("&Tools"), self)
+        self.addMenu(self.tools_menu)
 
     def _toggle_theme(self):
         app = get_app_instance()
