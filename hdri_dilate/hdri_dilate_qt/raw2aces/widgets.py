@@ -682,7 +682,12 @@ class Raw2AcesFormWidget(FormNoSideMargins):
             # Workaround for pyinstaller _internal folder...
             r2a_exe = Path(os.getcwd()) / "_internal" / "hdri_dilate" / "resources" / "bin" / "rawtoaces.exe"
 
-        self.r2a_path_lineedit.set_path(str(r2a_exe))
+        if r2a_exe.exists():
+            self.r2a_path_lineedit.set_path(str(r2a_exe))
+        else:
+            self.r2a_path_lineedit.setPlaceholderText(
+                tr("rawtoaces.exe not found in default location! Specify the path manually.")
+            )
 
     def _check_white_balance(self):
         value = self.white_balance_combobox.currentIndex()
