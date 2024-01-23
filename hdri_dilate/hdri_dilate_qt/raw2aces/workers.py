@@ -58,18 +58,18 @@ class Raw2AcesWorker(Worker):
 
         if parent.white_balance_custom_lineedit.isEnabled():
             cmd = (
-                f"{parent.r2a_path_lineedit.get_path()} "
-                f"--wb-method {parent.white_balance_combobox.currentIndex()} "
-                f"{parent.white_balance_custom_lineedit.text()} "
-                f"--mat-method {parent.matrix_combobox.currentIndex()} "
-                f"--headroom {parent.headroom_spinbox.value()} "
+                rf"{parent.r2a_path_lineedit.get_path()} "
+                rf"--wb-method {parent.white_balance_combobox.currentIndex()} "
+                rf"{parent.white_balance_custom_lineedit.text()} "
+                rf"--mat-method {parent.matrix_combobox.currentIndex()} "
+                rf"--headroom {parent.headroom_spinbox.value()} "
             )
         else:
             cmd = (
-                f"{parent.r2a_path_lineedit.get_path()} "
-                f"--wb-method {parent.white_balance_combobox.currentIndex()} "
-                f"--mat-method {parent.matrix_combobox.currentIndex()} "
-                f"--headroom {parent.headroom_spinbox.value()} "
+                rf"{parent.r2a_path_lineedit.get_path()} "
+                rf"--wb-method {parent.white_balance_combobox.currentIndex()} "
+                rf"--mat-method {parent.matrix_combobox.currentIndex()} "
+                rf"--headroom {parent.headroom_spinbox.value()} "
             )
 
         commands: list[tuple[str, int, int]] = []
@@ -90,9 +90,9 @@ class Raw2AcesWorker(Worker):
                 status_item.setText(msg)
                 continue
 
-            file_name = input_item.text()
-            self.signals.progress_file.emit(file_name)
-            new_cmd = cmd + file_name
+            file_path = input_item.text()
+            self.signals.progress_file.emit(file_path)
+            new_cmd = cmd + rf'"{file_path}"'
             commands.append((new_cmd, row_idx, 1))
 
         waiting = deque(commands)
@@ -108,7 +108,7 @@ class Raw2AcesWorker(Worker):
                     status_item: Raw2AcesStatusItem = model.item(_row_idx, 2)
                     status_item.setText("PROCESSING")
                     process_ = subprocess.Popen(
-                        command.split(),
+                        command,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
                     )
@@ -135,7 +135,10 @@ class Raw2AcesWorker(Worker):
                         input_item.setData(False, Qt.ItemDataRole.UserRole)
                         input_item.setBackground(QBrush(QColor(255, 40, 46)))
                 else:
-                    input_file = command.split(" ")[-1]
+                    # TODO: Hopefully should work on Linux environment
+                    # /path/to/rawtoaces.exe --blah "D:\test4\White Space\test3\DSC07977.ARW"
+                    # ['/path/to/rawtoaces.exe --blah ', 'D:\\test4\\White Space\\test3\\DSC07977.ARW', '']
+                    input_file = command.split('"')[-2]
                     img = pyexiv2.Image(input_file)
                     exif_data = img.read_exif()
                     aperture: str = exif_data["Exif.Photo.FNumber"]
