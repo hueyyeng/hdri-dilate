@@ -56,9 +56,11 @@ class Raw2AcesWorker(Worker):
         max_process_count = parent.process_count_spinbox.value()
         max_tries = 2
 
+        r2a_path = f'"{parent.r2a_path_lineedit.get_path()}"'
+
         if parent.white_balance_custom_lineedit.isEnabled():
             cmd = (
-                rf"{parent.r2a_path_lineedit.get_path()} "
+                rf"{r2a_path} "
                 rf"--wb-method {parent.white_balance_combobox.currentIndex()} "
                 rf"{parent.white_balance_custom_lineedit.text()} "
                 rf"--mat-method {parent.matrix_combobox.currentIndex()} "
@@ -66,7 +68,7 @@ class Raw2AcesWorker(Worker):
             )
         else:
             cmd = (
-                rf"{parent.r2a_path_lineedit.get_path()} "
+                rf"{r2a_path} "
                 rf"--wb-method {parent.white_balance_combobox.currentIndex()} "
                 rf"--mat-method {parent.matrix_combobox.currentIndex()} "
                 rf"--headroom {parent.headroom_spinbox.value()} "
@@ -139,7 +141,8 @@ class Raw2AcesWorker(Worker):
                     # /path/to/rawtoaces.exe --blah "D:\test4\White Space\test3\DSC07977.ARW"
                     # ['/path/to/rawtoaces.exe --blah ', 'D:\\test4\\White Space\\test3\\DSC07977.ARW', '']
                     input_file = command.split('"')[-2]
-                    img = pyexiv2.Image(input_file)
+                    input_bytes = Path(input_file).read_bytes()
+                    img = pyexiv2.ImageData(input_bytes)
                     exif_data = img.read_exif()
                     aperture: str = exif_data["Exif.Photo.FNumber"]
                     expTime: str = exif_data["Exif.Photo.ExposureTime"]
