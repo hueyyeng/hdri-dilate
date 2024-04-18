@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import logging
 import subprocess
 from collections import deque
@@ -16,6 +17,9 @@ from PySide6.QtGui import QBrush, QColor
 
 from hdri_dilate.exr import get_exr_header, write_exr_header
 from hdri_dilate.hdri_dilate_qt import qWait, tr
+from hdri_dilate.hdri_dilate_qt.raw2aces import (
+    get_desktop_path,
+)
 from hdri_dilate.hdri_dilate_qt.raw2aces.models import (
     Raw2AcesStatusItem,
 )
@@ -34,14 +38,21 @@ class Raw2AcesWorkerSignals(WorkerSignals):
     progress_stage = Signal(str)
 
 
+class Raw2AcesColumnIndex:
+    INPUT = 0
+    OUTPUT = 1
+    STATUS = 2
+
+
 class Raw2AcesWorker(Worker):
-    def __init__(self, parent: "Raw2AcesFormWidget", *args, **kwargs):
+    def __init__(self, parent: Raw2AcesFormWidget, *args, **kwargs):
         super().__init__()
         self.parent = parent
         self.args = args
         self.kwargs = kwargs
         self.signals = Raw2AcesWorkerSignals()
         self.active = False
+        self.exr_files: list[Path] = []
 
     def _run(self):
         parent = self.parent
@@ -82,8 +93,8 @@ class Raw2AcesWorker(Worker):
             if not self.active:
                 return
 
-            input_item = model.item(row_idx, 0)
-            status_item = model.item(row_idx, 2)
+            input_item = model.item(row_idx, Raw2AcesColumnIndex.INPUT)
+            status_item = model.item(row_idx, Raw2AcesColumnIndex.STATUS)
 
             is_done = status_item.get_status() == Raw2AcesStatusItem.DONE
             if is_done:
@@ -124,9 +135,9 @@ class Raw2AcesWorker(Worker):
                 process, command, _row_idx, tries = running.popleft()
                 output, error = process.communicate()
 
-                input_item = model.item(_row_idx, 0)
-                output_item = model.item(_row_idx, 1)
-                status_item: Raw2AcesStatusItem = model.item(_row_idx, 2)
+                input_item = model.item(_row_idx, Raw2AcesColumnIndex.INPUT)
+                output_item = model.item(_row_idx, Raw2AcesColumnIndex.OUTPUT)
+                status_item: Raw2AcesStatusItem = model.item(_row_idx, Raw2AcesColumnIndex.STATUS)
 
                 if error:
                     if tries < max_tries:
@@ -171,6 +182,7 @@ class Raw2AcesWorker(Worker):
                     try:
                         write_exr_header(exr_path, exr_path, exr_header)
                         output_item.setText(str(exr_path))
+                        self.exr_files.append(exr_path)
                         status_item.set_status(Raw2AcesStatusItem.DONE)
                         status_item.msg = ""
                         input_item.setData(True, Qt.ItemDataRole.UserRole)
@@ -180,7 +192,39 @@ class Raw2AcesWorker(Worker):
                         input_item.setData(False, Qt.ItemDataRole.UserRole)
                         input_item.setBackground(QBrush(QColor(255, 40, 46)))
 
+        if not parent.rename_file_padding_checkbox.isChecked():
+            print(f"All tasks finished")
+            return
+
+        count = 0
+        logs: list[str] = []
+        count_padding = f'%0{parent.seq_padding_length_spinbox.value()}d'
+
+        try:
+            for exr_file in sorted(self.exr_files):
+                count += 1
+                counter = count_padding % count
+                filename = exr_file.stem
+                file_ext = exr_file.suffix
+                new_name = f"{filename}.{counter}{file_ext}"
+                new_name_path = exr_file.parent / new_name
+                exr_file.rename(new_name_path)
+                log_text = f"{exr_file} -> {new_name}"
+                logs.append(log_text)
+        except (OSError, Exception) as e:
+            pass
+
+        self._save_renamed_log(logs)
         print(f"All tasks finished")
+
+    def _save_renamed_log(self, logs: list[str]):
+        current_time = datetime.datetime.now()
+        formatted_time = current_time.strftime("%Y%m%d_%H%M%S")
+
+        log_filename = f"renamed_exrs_{formatted_time}.log"
+        log_file = Path(get_desktop_path()) / "raw2aces_logs" / log_filename
+        log_file.parent.mkdir(exist_ok=True, parents=True)
+        log_file.write_text("\n".join(logs))
 
     def cancel(self):
         warning_msg = tr(

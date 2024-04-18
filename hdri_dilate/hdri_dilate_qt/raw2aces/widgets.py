@@ -13,6 +13,7 @@ from PySide6.QtWidgets import *
 from hdri_dilate.constants import icons
 from hdri_dilate.exr import get_exr_header
 from hdri_dilate.hdri_dilate_qt import tr
+from hdri_dilate.hdri_dilate_qt.checkbox import CheckBox
 from hdri_dilate.hdri_dilate_qt.forms import (
     FormNoSideMargins,
 )
@@ -22,6 +23,7 @@ from hdri_dilate.hdri_dilate_qt.inputs import (
 from hdri_dilate.hdri_dilate_qt.message_box import (
     NewMessageBox,
 )
+from hdri_dilate.hdri_dilate_qt.raw2aces import get_desktop_path
 from hdri_dilate.hdri_dilate_qt.raw2aces.models import (
     Raw2AcesModel,
     Raw2AcesStatusItem,
@@ -113,7 +115,7 @@ class PropertyProxyModel(QSortFilterProxyModel):
 
 
 class PropertyTreeView(QTreeView):
-    def __init__(self, parent: "PropertyPanelWidget"):
+    def __init__(self, parent: PropertyPanelWidget):
         super().__init__(parent)
         self.setSortingEnabled(True)
         self.setRootIsDecorated(False)
@@ -392,7 +394,7 @@ class Raw2AcesRunBtn(QPushButton):
 
 
 class Raw2AcesFileTreeView(QTreeView):
-    def __init__(self, parent: "Raw2AcesDialog"):
+    def __init__(self, parent: Raw2AcesDialog):
         super().__init__(parent)
         self.setSortingEnabled(True)
         self.setRootIsDecorated(False)
@@ -451,8 +453,8 @@ class Raw2AcesFileTreeView(QTreeView):
         self.files.add(file_path)
 
     def paintEvent(self, e: QPaintEvent):
-        super().paintEvent(e)
         if self.model() and self.model().rowCount() > 0:
+            super().paintEvent(e)
             return
 
         msg = tr("Drag and drop supported RAW files here")
@@ -461,7 +463,7 @@ class Raw2AcesFileTreeView(QTreeView):
 
 
 class Raw2AcesFileWidget(QWidget):
-    def __init__(self, parent: "Raw2AcesDialog"):
+    def __init__(self, parent: Raw2AcesDialog):
         super().__init__(parent)
         self.parent_ = parent
         self.layout_ = QVBoxLayout(self)
@@ -496,7 +498,7 @@ class Raw2AcesFileWidget(QWidget):
 
         self.layout_.addLayout(btn_layout)
 
-    def add_treeview(self, widget: "Raw2AcesFileTreeView"):
+    def add_treeview(self, widget: Raw2AcesFileTreeView):
         if self._treeview is None:
             self.layout_.addWidget(widget)
             self._treeview = widget
@@ -581,7 +583,7 @@ class Raw2AcesFileWidget(QWidget):
 
 
 class Raw2AcesFormWidget(FormNoSideMargins):
-    def __init__(self, parent: "Raw2AcesDialog"):
+    def __init__(self, parent: Raw2AcesDialog):
         super().__init__(parent)
         self.parent_ = parent
         self.r2a_path_lineedit = FilePathSelectorWidget(self)
@@ -664,6 +666,24 @@ class Raw2AcesFormWidget(FormNoSideMargins):
         self.process_count_preset_combobox.setCurrentIndex(1)
         self.process_count_preset_combobox.currentIndexChanged.connect(self._set_process_count)
 
+        self.rename_file_padding_checkbox = CheckBox(self)
+        self.rename_file_padding_checkbox.toggled.connect(self._rename_toggled)
+        self.rename_file_padding_checkbox.setToolTip(
+            tr(
+                "Rename the output EXR file with sequential padding. "
+                "E.g. DSC02024.00000.exr, DSC02025.00001.exr"
+            )
+        )
+
+        self.seq_padding_length_spinbox = QSpinBox(self)
+        self.seq_padding_length_spinbox.setEnabled(False)
+        self.seq_padding_length_spinbox.setToolTip(
+            tr("The sequence padding length. E.g. Value of 5 is represented as 00001.")
+        )
+        self.seq_padding_length_spinbox.setMinimum(3)
+        self.seq_padding_length_spinbox.setMaximum(10)
+        self.seq_padding_length_spinbox.setValue(5)
+
         self.addRow("rawtoaces.exe path", self.r2a_path_lineedit)
         self.addRow("White Balance", self.white_balance_combobox)
         self.addRow("White Balance Custom Arg", self.white_balance_custom_lineedit)
@@ -672,6 +692,8 @@ class Raw2AcesFormWidget(FormNoSideMargins):
         self.addRow("Highlight Headroom", self.headroom_spinbox)
         self.addRow("rawtoaces.exe Process Count Presets", self.process_count_preset_combobox)
         self.addRow("rawtoaces.exe Process Count", self.process_count_spinbox)
+        self.addRow("Rename File with Sequence Padding", self.rename_file_padding_checkbox)
+        self.addRow("Sequence Padding Length", self.seq_padding_length_spinbox)
 
         self.run_btn = Raw2AcesRunBtn("Run")
         self.run_btn.clicked.connect(self._run)
@@ -688,6 +710,10 @@ class Raw2AcesFormWidget(FormNoSideMargins):
             self.r2a_path_lineedit.setPlaceholderText(
                 tr("rawtoaces.exe not found in default location! Specify the path manually.")
             )
+
+    def _rename_toggled(self):
+        checked = self.rename_file_padding_checkbox.isChecked()
+        self.seq_padding_length_spinbox.setEnabled(checked)
 
     def _check_white_balance(self):
         value = self.white_balance_combobox.currentIndex()
@@ -795,3 +821,173 @@ class Raw2AcesDialog(QDialog):
         self.settings.headroom_spinbox.setValue(settings["headroom"])
         self.settings.process_count_spinbox.setValue(settings["process_count"])
         self.settings.process_count_preset_combobox.setCurrentIndex(settings["process_count_preset"])
+
+
+class Raw2AcesExrRenamerTreeView(QTreeView):
+    def __init__(self, parent: Raw2AcesExrRenamerDialog):
+        super().__init__(parent)
+        self.parent_ = parent
+        self.setSortingEnabled(True)
+        self.setRootIsDecorated(False)
+
+        self.setAcceptDrops(True)
+        self.setDragEnabled(True)
+        self.setDragDropMode(QTreeView.DragDropMode.InternalMove)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.setSelectionMode(QTreeView.SelectionMode.SingleSelection)
+
+        self.files = set()
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event: QDragMoveEvent):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event: QDropEvent):
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            for url in urls:
+                file_path = os.path.normpath(url.toLocalFile())
+                if file_path in self.files:
+                    continue
+
+                if not file_path.lower().endswith("exr"):
+                    continue
+
+                self.add_file_item(file_path)
+
+            self.setSortingEnabled(True)
+            self.resizeColumnToContents(0)
+            self.sortByColumn(0, Qt.SortOrder.AscendingOrder)
+            self.setSortingEnabled(False)
+
+    def add_file_item(self, file_path: str):
+        item = QStandardItem(file_path)
+        model: QStandardItemModel = self.model()
+        model.appendRow(item)
+        item_idx = model.indexFromItem(item)
+
+        raw_path = Path(file_path)
+        raw_stem = raw_path.stem
+        exr_path = raw_path.parent / f"{raw_stem}.exr"
+        status_item = Raw2AcesStatusItem.from_status(Raw2AcesStatusItem.READY)
+
+        self.parent_.exr_files.append(exr_path)
+        output_item = QStandardItem()
+        model.setItem(item_idx.row(), 1, output_item)
+        model.setItem(item_idx.row(), 2, status_item)
+
+        self.files.add(file_path)
+
+    def paintEvent(self, e: QPaintEvent):
+        if self.model() and self.model().rowCount() > 0:
+            super().paintEvent(e)
+            return
+
+        msg = tr("Drag and drop EXR files here")
+        p = QPainter(self.viewport())
+        p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, msg)
+
+
+class Raw2AcesExrRenamerDialog(QDialog):
+    width_padding = 8
+    height_padding = round(width_padding / 2)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(
+            f"""
+              QPushButton {{
+                  min-width: 64px;
+                  padding-top: {self.height_padding}px;
+                  padding-bottom: {self.height_padding}px;
+                  padding-left: {self.width_padding}px;
+                  padding-right: {self.width_padding}px;
+              }}
+              """
+        )
+        self.setWindowTitle("Raw2Aces EXR Renamer")
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint)
+        self.setGeometry(100, 100, 800, 600)
+
+        self.exr_files = []
+        self.treeview = Raw2AcesExrRenamerTreeView(self)
+        self.model = Raw2AcesModel(self)
+        self.treeview.setModel(self.model)
+
+        self.seq_padding_length_spinbox = QSpinBox(self)
+        self.seq_padding_length_spinbox.setToolTip(
+            tr("The sequence padding length. E.g. Value of 5 is represented as 00001.")
+        )
+        self.seq_padding_length_spinbox.setMinimum(3)
+        self.seq_padding_length_spinbox.setMaximum(10)
+        self.seq_padding_length_spinbox.setValue(5)
+
+        self.run_btn = QPushButton("Run")
+        self.run_btn.clicked.connect(self._run_rename)
+        howto_label = QLabel(
+            f"Rename EXRs with sequential padding number. "
+            f"This will always sort by ascending order."
+        )
+        container = Raw2AcesContainer(self)
+        form = FormNoSideMargins(self)
+        form.addWidgetAsRow(howto_label)
+        form.addRow(QLabel("Padding Count:"), self.seq_padding_length_spinbox)
+        container.addWidget(form)
+        container.addWidget(self.treeview)
+        container.addWidget(self.run_btn)
+        container.setStretchFactor(0, 0)
+        container.setStretchFactor(1, 1)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(container)
+
+    def _run_rename(self):
+        self.treeview.setEnabled(False)
+        self.run_btn.setEnabled(False)
+
+        count = 0
+        logs: list[str] = []
+        count_padding = f'%0{self.seq_padding_length_spinbox.value()}d'
+
+        try:
+            for row_idx in range(self.model.rowCount()):
+                status_item: Raw2AcesStatusItem = self.model.item(row_idx, 2)
+                if status_item.get_status() == Raw2AcesStatusItem.DONE:
+                    continue
+
+                input_item = self.model.item(row_idx, 0)
+                output_item = self.model.item(row_idx, 1)
+                exr_file = Path(input_item.text())
+                count += 1
+                counter = count_padding % count
+                filename = exr_file.stem
+                file_ext = exr_file.suffix
+                new_name = f"{filename}.{counter}{file_ext}"
+                new_name_path = exr_file.parent / new_name
+                exr_file.rename(new_name_path)
+                output_item.setText(str(new_name_path))
+                status_item.set_status(Raw2AcesStatusItem.DONE)
+                log_text = f"{exr_file} -> {new_name}"
+                logs.append(log_text)
+        except (OSError, Exception) as e:
+            print(f"e")
+
+        self.treeview.resizeColumnToContents(0)
+        self.treeview.resizeColumnToContents(1)
+        self._save_renamed_log(logs)
+
+        self.treeview.setEnabled(True)
+        self.run_btn.setEnabled(True)
+
+    def _save_renamed_log(self, logs: list[str]):
+        current_time = datetime.datetime.now()
+        formatted_time = current_time.strftime("%Y%m%d_%H%M%S")
+
+        log_filename = f"renamed_exrs_{formatted_time}.log"
+        log_file = Path(get_desktop_path()) / "raw2aces_logs" / log_filename
+        log_file.parent.mkdir(exist_ok=True, parents=True)
+        log_file.write_text("\n".join(logs))

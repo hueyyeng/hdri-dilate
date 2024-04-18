@@ -32,6 +32,7 @@ from hdri_dilate.hdri_dilate_qt.message_box import (
 from hdri_dilate.hdri_dilate_qt.raw2aces.widgets import (
     ExrRawMetadataViewerDialog,
     Raw2AcesDialog,
+    Raw2AcesExrRenamerDialog,
 )
 from hdri_dilate.hdri_dilate_qt.toolbars import (
     VerticalToolBar,
@@ -66,7 +67,10 @@ class MainWindow(ComelMainWindowWrapper):
         self.menu_bar.tools_menu.addAction(metadata_dialog_action)
         raw2aces_dialog_action = QAction(tr("&Raw2Aces..."), self)
         raw2aces_dialog_action.triggered.connect(self.show_raw2aces_dialog)
+        exr_renamer_dialog_action = QAction(tr("&EXR Renamer..."), self)
+        exr_renamer_dialog_action.triggered.connect(self.show_exr_renamer_dialog)
         self.menu_bar.tools_menu.addAction(raw2aces_dialog_action)
+        self.menu_bar.tools_menu.addAction(exr_renamer_dialog_action)
         self.setMenuBar(self.menu_bar)
 
         # # Sidebar widgets
@@ -182,6 +186,10 @@ class MainWindow(ComelMainWindowWrapper):
     def show_raw2aces_dialog(self):
         dlg = Raw2AcesDialog(self)
         dlg.show()
+
+    def show_exr_renamer_dialog(self):
+        dlg = Raw2AcesExrRenamerDialog(self)
+        dlg.exec()
 
     def odd_blur_size(self):
         blur_size = self.blur_size_spinbox.value()
