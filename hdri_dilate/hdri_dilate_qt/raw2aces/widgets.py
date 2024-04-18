@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import csv
 import datetime
 import json
 import os
+import time
 from pathlib import Path
 
 import pyexiv2
@@ -23,13 +25,13 @@ from hdri_dilate.hdri_dilate_qt.inputs import (
 from hdri_dilate.hdri_dilate_qt.message_box import (
     NewMessageBox,
 )
-from hdri_dilate.hdri_dilate_qt.raw2aces import get_desktop_path
+from hdri_dilate.hdri_dilate_qt.raw2aces import get_desktop_path, renamer
 from hdri_dilate.hdri_dilate_qt.raw2aces.models import (
     Raw2AcesModel,
-    Raw2AcesStatusItem,
+    Raw2AcesStatusItem, Raw2AcesExrRenamerModel,
 )
 from hdri_dilate.hdri_dilate_qt.raw2aces.workers import (
-    Raw2AcesWorker,
+    Raw2AcesWorker, Raw2AcesDroppedWorker,
 )
 from hdri_dilate.hdri_dilate_qt.workers import (
     run_worker_in_thread,
@@ -823,13 +825,49 @@ class Raw2AcesDialog(QDialog):
         self.settings.process_count_preset_combobox.setCurrentIndex(settings["process_count_preset"])
 
 
+class DroppedProgressDialog(QDialog):
+    def __init__(self, parent: Raw2AcesExrRenamerDialog):
+        super().__init__(parent)
+        self.parent_ = parent
+        self.setWindowTitle(tr("Processing EXRs"))
+
+        self._progress: int = 0
+        self._progress_total: int = 0
+
+        self.label = QLabel(
+            tr("Processing dropped EXR files... please wait.")
+        )
+        self.progress_label = QLabel(
+            tr("{0} out of {1}").format(self._progress, self._progress_total)
+        )
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.label)
+        layout.addWidget(self.progress_label)
+
+        size: QSize = self.sizeHint()
+        self.setFixedHeight(size.height())
+
+    def set_progress_total(self, total: int):
+        self._progress_total = total
+
+    def set_progress(self, progress: int):
+        self._progress = progress
+        self.progress_label.setText(
+            tr("{0} out of {1}").format(self._progress, self._progress_total)
+        )
+
+    def closeEvent(self, event: QCloseEvent):
+        if self.parent_.paste_start_time:
+            event.ignore()
+
+
 class Raw2AcesExrRenamerTreeView(QTreeView):
     def __init__(self, parent: Raw2AcesExrRenamerDialog):
         super().__init__(parent)
         self.parent_ = parent
         self.setSortingEnabled(True)
         self.setRootIsDecorated(False)
-
         self.setAcceptDrops(True)
         self.setDragEnabled(True)
         self.setDragDropMode(QTreeView.DragDropMode.InternalMove)
@@ -849,38 +887,22 @@ class Raw2AcesExrRenamerTreeView(QTreeView):
     def dropEvent(self, event: QDropEvent):
         if event.mimeData().hasUrls():
             urls = event.mimeData().urls()
-            for url in urls:
-                file_path = os.path.normpath(url.toLocalFile())
-                if file_path in self.files:
-                    continue
+            parent = self.parent_
+            parent.paste_start_time = time.perf_counter()
+            worker = Raw2AcesDroppedWorker(
+                parent=parent,
+                urls=urls,
+            )
+            worker.signals.progress_total.connect(parent._paste_dialog.set_progress_total)
+            worker.signals.progress.connect(parent._paste_dialog.set_progress)
+            worker.signals.is_busy.connect(parent._update_paste_dialog)
+            run_worker_in_thread(
+                worker,
+                on_finish=self.post_dropped,
+            )
 
-                if not file_path.lower().endswith("exr"):
-                    continue
-
-                self.add_file_item(file_path)
-
-            self.setSortingEnabled(True)
-            self.resizeColumnToContents(0)
-            self.sortByColumn(0, Qt.SortOrder.AscendingOrder)
-            self.setSortingEnabled(False)
-
-    def add_file_item(self, file_path: str):
-        item = QStandardItem(file_path)
-        model: QStandardItemModel = self.model()
-        model.appendRow(item)
-        item_idx = model.indexFromItem(item)
-
-        raw_path = Path(file_path)
-        raw_stem = raw_path.stem
-        exr_path = raw_path.parent / f"{raw_stem}.exr"
-        status_item = Raw2AcesStatusItem.from_status(Raw2AcesStatusItem.READY)
-
-        self.parent_.exr_files.append(exr_path)
-        output_item = QStandardItem()
-        model.setItem(item_idx.row(), 1, output_item)
-        model.setItem(item_idx.row(), 2, status_item)
-
-        self.files.add(file_path)
+    def post_dropped(self):
+        self.setSortingEnabled(False)
 
     def paintEvent(self, e: QPaintEvent):
         if self.model() and self.model().rowCount() > 0:
@@ -913,11 +935,25 @@ class Raw2AcesExrRenamerDialog(QDialog):
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint)
         self.setGeometry(100, 100, 800, 600)
 
+        self._paste_dialog = DroppedProgressDialog(self)
+        self.paste_start_time: float | None = None
+        self.is_busy: bool = False
         self.exr_files = []
+
         self.treeview = Raw2AcesExrRenamerTreeView(self)
-        self.model = Raw2AcesModel(self)
+        self.model = Raw2AcesExrRenamerModel(self)
         self.treeview.setModel(self.model)
 
+        self.new_name_lineedit = QLineEdit(self)
+        self.new_name_lineedit.setText("DSC10000_")
+        self.new_name_lineedit.textChanged.connect(lambda: renamer(self))
+        self.new_name_lineedit.setPlaceholderText(
+            tr("Replace original filename with new name value.")
+        )
+
+        self.sort_by_date_taken_checkbox = CheckBox(self)
+        self.sort_by_date_taken_checkbox.setChecked(True)
+        self.sort_by_date_taken_checkbox.toggled.connect(self._date_taken_toggled)
         self.seq_padding_length_spinbox = QSpinBox(self)
         self.seq_padding_length_spinbox.setToolTip(
             tr("The sequence padding length. E.g. Value of 5 is represented as 00001.")
@@ -925,6 +961,10 @@ class Raw2AcesExrRenamerDialog(QDialog):
         self.seq_padding_length_spinbox.setMinimum(3)
         self.seq_padding_length_spinbox.setMaximum(10)
         self.seq_padding_length_spinbox.setValue(5)
+        self.seq_padding_length_spinbox.valueChanged.connect(lambda: renamer(self))
+
+        self.reset_btn = QPushButton("Reset")
+        self.reset_btn.clicked.connect(self._reset)
 
         self.run_btn = QPushButton("Run")
         self.run_btn.clicked.connect(self._run_rename)
@@ -935,59 +975,87 @@ class Raw2AcesExrRenamerDialog(QDialog):
         container = Raw2AcesContainer(self)
         form = FormNoSideMargins(self)
         form.addWidgetAsRow(howto_label)
+        form.addRow(QLabel("New Name:"), self.new_name_lineedit)
+        form.addRow(QLabel("Sort by Date Taken:"), self.sort_by_date_taken_checkbox)
         form.addRow(QLabel("Padding Count:"), self.seq_padding_length_spinbox)
         container.addWidget(form)
         container.addWidget(self.treeview)
         container.addWidget(self.run_btn)
+        container.addWidget(self.reset_btn)
         container.setStretchFactor(0, 0)
         container.setStretchFactor(1, 1)
 
         layout = QVBoxLayout(self)
         layout.addWidget(container)
 
+    def _reset(self):
+        self.treeview.files.clear()
+        self.model.reset()
+        self.exr_files.clear()
+
+    def _update_paste_dialog(self, is_busy: bool):
+        if not is_busy:
+            self.paste_start_time = None
+            self._paste_dialog.close()
+            return
+
+        current_time = time.perf_counter()
+        if current_time - self.paste_start_time > 2:
+            if not self._paste_dialog.isVisible():
+                self._paste_dialog.exec()
+
+    def _date_taken_toggled(self):
+        if self.sort_by_date_taken_checkbox.isChecked():
+            self.treeview.sortByColumn(2, Qt.SortOrder.AscendingOrder)
+        else:
+            self.treeview.sortByColumn(0, Qt.SortOrder.AscendingOrder)
+
     def _run_rename(self):
         self.treeview.setEnabled(False)
         self.run_btn.setEnabled(False)
 
-        count = 0
-        logs: list[str] = []
-        count_padding = f'%0{self.seq_padding_length_spinbox.value()}d'
+        logs: list[dict[str, str]] = []
 
         try:
             for row_idx in range(self.model.rowCount()):
-                status_item: Raw2AcesStatusItem = self.model.item(row_idx, 2)
+                status_item: Raw2AcesStatusItem = self.model.item(row_idx, 3)
                 if status_item.get_status() == Raw2AcesStatusItem.DONE:
                     continue
 
                 input_item = self.model.item(row_idx, 0)
                 output_item = self.model.item(row_idx, 1)
-                exr_file = Path(input_item.text())
-                count += 1
-                counter = count_padding % count
-                filename = exr_file.stem
-                file_ext = exr_file.suffix
-                new_name = f"{filename}.{counter}{file_ext}"
-                new_name_path = exr_file.parent / new_name
-                exr_file.rename(new_name_path)
-                output_item.setText(str(new_name_path))
+                original_file = Path(input_item.text())
+                new_file = Path(output_item.text())
+                original_file.rename(new_file)
                 status_item.set_status(Raw2AcesStatusItem.DONE)
-                log_text = f"{exr_file} -> {new_name}"
-                logs.append(log_text)
+                log_text = f"{original_file} -> {new_file}"
+                print(log_text)
+                log_data = {
+                    "original_file": original_file,
+                    "new_file": str(new_file),
+                }
+                logs.append(log_data)
         except (OSError, Exception) as e:
-            print(f"e")
+            print(f"{e=}")
 
         self.treeview.resizeColumnToContents(0)
         self.treeview.resizeColumnToContents(1)
+
         self._save_renamed_log(logs)
 
         self.treeview.setEnabled(True)
         self.run_btn.setEnabled(True)
 
-    def _save_renamed_log(self, logs: list[str]):
+    def _save_renamed_log(self, logs: list[dict[str, str]]):
         current_time = datetime.datetime.now()
         formatted_time = current_time.strftime("%Y%m%d_%H%M%S")
 
-        log_filename = f"renamed_exrs_{formatted_time}.log"
+        log_filename = f"renamed_exrs_{formatted_time}.csv"
         log_file = Path(get_desktop_path()) / "raw2aces_logs" / log_filename
         log_file.parent.mkdir(exist_ok=True, parents=True)
-        log_file.write_text("\n".join(logs))
+
+        keys = logs[0].keys()
+        with open(log_file, 'w', newline='') as output_file:
+            dict_writer = csv.DictWriter(output_file, keys)
+            dict_writer.writeheader()
+            dict_writer.writerows(logs)

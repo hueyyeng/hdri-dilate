@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import os
 import subprocess
 from collections import deque
 from pathlib import Path
@@ -10,15 +11,19 @@ from typing import TYPE_CHECKING
 import pyexiv2
 
 if TYPE_CHECKING:
-    from hdri_dilate.hdri_dilate_qt.raw2aces.widgets import Raw2AcesFormWidget
+    from hdri_dilate.hdri_dilate_qt.raw2aces.widgets import (
+        Raw2AcesFormWidget,
+        Raw2AcesExrRenamerDialog,
+    )
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QBrush, QColor
+from PySide6.QtGui import QBrush, QColor, QStandardItem, QStandardItemModel
 
 from hdri_dilate.exr import get_exr_header, write_exr_header
 from hdri_dilate.hdri_dilate_qt import qWait, tr
 from hdri_dilate.hdri_dilate_qt.raw2aces import (
     get_desktop_path,
+    renamer,
 )
 from hdri_dilate.hdri_dilate_qt.raw2aces.models import (
     Raw2AcesStatusItem,
@@ -246,4 +251,117 @@ class Raw2AcesWorker(Worker):
         except Exception as e:
             self.log_error(e)
 
+        self.signals.finished.emit()
+
+
+class Raw2AcesDroppedWorkerSignals(WorkerSignals):
+    progress = Signal(int)
+    progress_task = Signal(str)
+    progress_total = Signal(int)
+    is_busy = Signal(bool)
+
+
+class Raw2AcesDroppedWorker(Worker):
+    def __init__(self, urls, parent: Raw2AcesExrRenamerDialog, *args, **kwargs):
+        super().__init__()
+        self.parent = parent
+        self.urls = urls
+        self.args = args
+        self.kwargs = kwargs
+        self.signals = Raw2AcesDroppedWorkerSignals()
+
+    def add_file_item(self, file_path: str):
+        parent = self.parent
+        item = QStandardItem(file_path)
+        model: QStandardItemModel = parent.model
+        model.appendRow(item)
+        item_idx = model.indexFromItem(item)
+
+        raw_path = Path(file_path)
+        raw_stem = raw_path.stem
+
+        exr_path = raw_path.parent / f"{raw_stem}.exr"
+
+        arw_path = raw_path.parent / f"{raw_stem.replace('_aces', '')}.ARW"
+        arw_path_ = Path(arw_path)
+
+        jpg_path = raw_path.parent / f"{raw_stem.replace('_aces', '')}.JPG"
+        jpg_path_ = Path(jpg_path)
+
+        input_bytes = None
+        if jpg_path_.exists():
+            input_bytes = jpg_path_.read_bytes()
+
+        elif arw_path_.exists():
+            input_bytes = arw_path_.read_bytes()
+
+        sony_dsc_name_prefix = raw_stem[:8]
+        arw_path = raw_path.parent / f"{sony_dsc_name_prefix}.ARW"
+        arw_path_ = Path(arw_path)
+
+        jpg_path = raw_path.parent / f"{sony_dsc_name_prefix}.JPG"
+        jpg_path_ = Path(jpg_path)
+
+        if jpg_path_.exists():
+            input_bytes = jpg_path_.read_bytes()
+
+        elif arw_path_.exists():
+            input_bytes = arw_path_.read_bytes()
+
+        if not input_bytes:
+            raise OSError("Cannot find equivalent files for EXIF metadata!")
+
+        img = pyexiv2.ImageData(input_bytes)
+        exif_data = img.read_exif()
+        dt: str = exif_data["Exif.Image.DateTime"]
+
+        parent.exr_files.append(exr_path)
+
+        output_item = QStandardItem()
+        date_taken_item = QStandardItem(str(dt))
+        status_item = Raw2AcesStatusItem.from_status(Raw2AcesStatusItem.READY)
+
+        model.setItem(item_idx.row(), 1, output_item)
+        model.setItem(item_idx.row(), 2, date_taken_item)
+        model.setItem(item_idx.row(), 3, status_item)
+
+        parent.treeview.files.add(file_path)
+
+    def _run(self):
+        self.signals.is_busy.emit(True)
+
+        parent = self.parent
+        urls = self.urls
+        self.signals.progress_total.emit(len(urls))
+
+        for file_idx, url in enumerate(urls):
+            self.signals.progress.emit(file_idx + 1)
+            file_path = os.path.normpath(url.toLocalFile())
+            if file_path in parent.treeview.files:
+                continue
+
+            if not file_path.lower().endswith("exr"):
+                continue
+
+            self.add_file_item(file_path)
+
+        parent.treeview.setSortingEnabled(True)
+        parent.treeview.resizeColumnToContents(0)
+        if parent.sort_by_date_taken_checkbox.isChecked():
+            parent.treeview.sortByColumn(2, Qt.SortOrder.AscendingOrder)
+        else:
+            parent.treeview.sortByColumn(0, Qt.SortOrder.AscendingOrder)
+
+        renamer(parent)
+
+    def run(self):
+        self.active = True
+        self.signals.started.emit()
+
+        try:
+            self.measure_time(self._run)
+        except Exception as e:
+            self.log_error(e)
+
+        self.signals.is_busy.emit(False)
         self.signals.finished.emit()

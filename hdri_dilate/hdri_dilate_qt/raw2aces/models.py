@@ -82,3 +82,23 @@ class Raw2AcesModel(QStandardItemModel):
     def reset(self):
         self.clear()
         self.reset_headers()
+
+
+class Raw2AcesExrRenamerModel(QStandardItemModel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.reset_headers()
+
+    def reset_headers(self):
+        self.setHorizontalHeaderLabels(
+            [
+                "Input",
+                "Output",
+                "Date Taken",
+                "Status",
+            ]
+        )
+
+    def reset(self):
+        self.clear()
+        self.reset_headers()
