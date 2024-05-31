@@ -31,7 +31,7 @@ from hdri_dilate.hdri_dilate_qt.message_box import (
 )
 from hdri_dilate.hdri_dilate_qt.raw2aces.widgets import (
     ExrRawMetadataViewerDialog,
-    Raw2AcesDialog,
+    Raw2AcesConverterDialog,
     Raw2AcesExrRenamerDialog,
 )
 from hdri_dilate.hdri_dilate_qt.toolbars import (
@@ -180,15 +180,15 @@ class MainWindow(ComelMainWindowWrapper):
         self.central_widget.addStretch()
 
     def show_exr_raw_metadata_dialog(self):
-        dlg = ExrRawMetadataViewerDialog(self)
+        dlg = ExrRawMetadataViewerDialog(parent=self)
         dlg.show()
 
     def show_raw2aces_dialog(self):
-        dlg = Raw2AcesDialog(self)
+        dlg = Raw2AcesConverterDialog(parent=self)
         dlg.show()
 
     def show_exr_renamer_dialog(self):
-        dlg = Raw2AcesExrRenamerDialog(self)
+        dlg = Raw2AcesExrRenamerDialog(parent=self)
         dlg.exec()
 
     def odd_blur_size(self):

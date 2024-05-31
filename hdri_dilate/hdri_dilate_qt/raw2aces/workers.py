@@ -4,6 +4,7 @@ import datetime
 import logging
 import os
 import subprocess
+import traceback
 from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -116,6 +117,8 @@ class Raw2AcesWorker(Worker):
         waiting = deque(commands)
         running = deque()
 
+        r2a_dir = Path(parent.r2a_path_lineedit.get_path()).parent
+
         while len(waiting) > 0 or len(running) > 0:
             print(f'Running: {len(running)}, Waiting: {len(waiting)}')
 
@@ -129,11 +132,12 @@ class Raw2AcesWorker(Worker):
                         command,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
+                        cwd=r2a_dir,
                     )
                     running.append((process_, command, _row_idx, tries))
                     print(f"Started task {command}")
-                except OSError:
-                    print(f'Failed to start command {command}')
+                except (OSError, Exception) as e:
+                    print(f'Failed to start command {command}. Error Traceback: {traceback.format_exc()}')
 
             # check running commands
             for _ in range(len(running)):
@@ -145,6 +149,7 @@ class Raw2AcesWorker(Worker):
                 status_item: Raw2AcesStatusItem = model.item(_row_idx, Raw2AcesColumnIndex.STATUS)
 
                 if error:
+                    qWait(100)
                     if tries < max_tries:
                         waiting.append((command, _row_idx, tries + 1))
                     else:

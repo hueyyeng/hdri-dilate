@@ -12,7 +12,7 @@ from PySide6.QtCore import *
 from PySide6.QtGui import *
 from PySide6.QtWidgets import *
 
-from hdri_dilate.constants import icons
+from hdri_dilate.constants import icons, DOUBLE_LINEBREAKS
 from hdri_dilate.exr import get_exr_header
 from hdri_dilate.hdri_dilate_qt import tr
 from hdri_dilate.hdri_dilate_qt.checkbox import CheckBox
@@ -25,13 +25,18 @@ from hdri_dilate.hdri_dilate_qt.inputs import (
 from hdri_dilate.hdri_dilate_qt.message_box import (
     NewMessageBox,
 )
-from hdri_dilate.hdri_dilate_qt.raw2aces import get_desktop_path, renamer
+from hdri_dilate.hdri_dilate_qt.raw2aces import (
+    get_desktop_path,
+    renamer,
+)
 from hdri_dilate.hdri_dilate_qt.raw2aces.models import (
+    Raw2AcesExrRenamerModel,
     Raw2AcesModel,
-    Raw2AcesStatusItem, Raw2AcesExrRenamerModel,
+    Raw2AcesStatusItem,
 )
 from hdri_dilate.hdri_dilate_qt.raw2aces.workers import (
-    Raw2AcesWorker, Raw2AcesDroppedWorker,
+    Raw2AcesDroppedWorker,
+    Raw2AcesWorker,
 )
 from hdri_dilate.hdri_dilate_qt.workers import (
     run_worker_in_thread,
@@ -100,7 +105,7 @@ class PropertyModel(QStandardItemModel):
 
 
 class SearchLineEdit(QLineEdit):
-    placeholder_text = "Search Property"
+    placeholder_text = "Search Property/Value"
 
     def __init__(self, proxy: QSortFilterProxyModel, parent=None):
         super().__init__(parent=parent)
@@ -114,6 +119,23 @@ class PropertyProxyModel(QSortFilterProxyModel):
         super().__init__(parent)
         self.setFilterRole(Qt.ItemDataRole.DisplayRole)
         self.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+
+    def filterAcceptsRow(self, source_row, source_parent, *args, **kwargs):
+        filter_text = self.filterRegularExpression().pattern().lower()
+        source_model = self.sourceModel()
+
+        for column in range(source_model.columnCount()):
+            index = source_model.index(source_row, column, source_parent)
+            text = source_model.data(index, Qt.ItemDataRole.DisplayRole)
+
+            if filter_text in text.lower():
+                return True
+
+            data = source_model.data(index, Qt.ItemDataRole.UserRole)
+            if filter_text in str(data):
+                return True
+
+        return False
 
 
 class PropertyTreeView(QTreeView):
@@ -337,10 +359,11 @@ class FileBrowserWidget(QWidget):
 
 class ExrRawMetadataViewerDialog(QDialog):
     def __init__(self, parent=None):
-        super().__init__(parent)
+        super().__init__(parent=parent)
         self.setWindowTitle("EXR/RAW Metadata Viewer")
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint)
         self.setGeometry(100, 100, 800, 600)
+        self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
 
         layout = QHBoxLayout(self)
 
@@ -396,7 +419,7 @@ class Raw2AcesRunBtn(QPushButton):
 
 
 class Raw2AcesFileTreeView(QTreeView):
-    def __init__(self, parent: Raw2AcesDialog):
+    def __init__(self, parent: Raw2AcesConverterDialog):
         super().__init__(parent)
         self.setSortingEnabled(True)
         self.setRootIsDecorated(False)
@@ -430,6 +453,8 @@ class Raw2AcesFileTreeView(QTreeView):
                     continue
 
                 self.add_file_item(file_path)
+
+            self.resizeColumnToContents(0)
 
     def add_file_item(self, file_path: str):
         item = QStandardItem(file_path)
@@ -465,7 +490,7 @@ class Raw2AcesFileTreeView(QTreeView):
 
 
 class Raw2AcesFileWidget(QWidget):
-    def __init__(self, parent: Raw2AcesDialog):
+    def __init__(self, parent: Raw2AcesConverterDialog):
         super().__init__(parent)
         self.parent_ = parent
         self.layout_ = QVBoxLayout(self)
@@ -585,7 +610,7 @@ class Raw2AcesFileWidget(QWidget):
 
 
 class Raw2AcesFormWidget(FormNoSideMargins):
-    def __init__(self, parent: Raw2AcesDialog):
+    def __init__(self, parent: Raw2AcesConverterDialog):
         super().__init__(parent)
         self.parent_ = parent
         self.r2a_path_lineedit = FilePathSelectorWidget(self)
@@ -701,10 +726,25 @@ class Raw2AcesFormWidget(FormNoSideMargins):
         self.run_btn.clicked.connect(self._run)
         self.addRow("", self.run_btn)
 
-        r2a_exe = Path(os.getcwd()) / "hdri_dilate" / "resources" / "bin" / "rawtoaces.exe"
+        r2a_exe = Path(
+            os.getcwd(),
+            "hdri_dilate",
+            "resources",
+            "bin",
+            "1.0.0-VPP",
+            "rawtoaces.exe",
+        )
         if not r2a_exe.exists():
             # Workaround for pyinstaller _internal folder...
-            r2a_exe = Path(os.getcwd()) / "_internal" / "hdri_dilate" / "resources" / "bin" / "rawtoaces.exe"
+            r2a_exe = Path(
+                os.getcwd(),
+                "_internal",
+                "hdri_dilate",
+                "resources",
+                "bin",
+                "1.0.0-VPP",
+                "rawtoaces.exe",
+            )
 
         if r2a_exe.exists():
             self.r2a_path_lineedit.set_path(str(r2a_exe))
@@ -768,12 +808,12 @@ class Raw2AcesFormWidget(FormNoSideMargins):
         )
 
 
-class Raw2AcesDialog(QDialog):
+class Raw2AcesConverterDialog(QDialog):
     width_padding = 8
     height_padding = round(width_padding / 2)
 
     def __init__(self, parent=None):
-        super().__init__(parent)
+        super().__init__(parent=parent)
         self.setStyleSheet(
             f"""
               QPushButton {{
@@ -788,6 +828,7 @@ class Raw2AcesDialog(QDialog):
         self.setWindowTitle("Raw2Aces Converter")
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint)
         self.setGeometry(100, 100, 800, 600)
+        self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
 
         self.settings = Raw2AcesFormWidget(self)
         self.treeview = Raw2AcesFileTreeView(self)
@@ -909,7 +950,15 @@ class Raw2AcesExrRenamerTreeView(QTreeView):
             super().paintEvent(e)
             return
 
-        msg = tr("Drag and drop EXR files here")
+        msg1 = tr("Drag and drop EXR files here.")
+        msg2 = tr(
+            "Make sure the respective Raw or JPEG files of the same name exists for the renamer to works."
+        )
+        msg = (
+            f"{msg1}"
+            f"{DOUBLE_LINEBREAKS}"
+            f"{msg2}"
+        )
         p = QPainter(self.viewport())
         p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, msg)
 
@@ -919,7 +968,7 @@ class Raw2AcesExrRenamerDialog(QDialog):
     height_padding = round(width_padding / 2)
 
     def __init__(self, parent=None):
-        super().__init__(parent)
+        super().__init__(parent=parent)
         self.setStyleSheet(
             f"""
               QPushButton {{
@@ -934,6 +983,7 @@ class Raw2AcesExrRenamerDialog(QDialog):
         self.setWindowTitle("Raw2Aces EXR Renamer")
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint)
         self.setGeometry(100, 100, 800, 600)
+        self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
 
         self._paste_dialog = DroppedProgressDialog(self)
         self.paste_start_time: float | None = None
@@ -1053,6 +1103,9 @@ class Raw2AcesExrRenamerDialog(QDialog):
         log_filename = f"renamed_exrs_{formatted_time}.csv"
         log_file = Path(get_desktop_path()) / "raw2aces_logs" / log_filename
         log_file.parent.mkdir(exist_ok=True, parents=True)
+
+        if not logs:
+            raise Exception("Logs data is missing!")
 
         keys = logs[0].keys()
         with open(log_file, 'w', newline='') as output_file:
